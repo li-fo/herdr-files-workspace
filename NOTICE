@@ -1,0 +1,18 @@
+Files+ for Herdr
+
+This product is a modified version of File Icons for Herdr
+(https://github.com/amster93/herdr-file-icons, Apache-2.0), which is itself
+modified from the Herdr app's shipped `files` mod
+(https://github.com/herdrdev/herdr-app, Apache-2.0).
+
+Changes in Files+: a right-click menu on files and folders (download to
+~/Downloads, paste/upload from Finder, copy path, reveal in Finder, delete with
+confirmation), drag-and-drop upload, background transfers over scp for remote
+machines, English and Russian interface text, the install script, and the
+mod's renaming to files-plus.
+
+Icons in mods/files-plus/icons/ come from Material Icon Theme
+(https://github.com/material-extensions/vscode-material-icon-theme), MIT.
+Menu and chevron glyphs come from Lucide (https://lucide.dev), ISC.
+finder.svg and spinner.svg are copied from the Herdr app's workspace-chrome
+mod (Apache-2.0).
