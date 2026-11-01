@@ -8,7 +8,7 @@ Herdr's Files panel with file transfer and VS Code's file icons. Right-click a f
 
 - **The panel**, wherever the layout's Files block is (in Herdr's `main`: the right-hand panel opened with the tab bar's Files button). `background` fill, 1px `border`, 10px radius.
 - **Header**, 42px, 1px `border` under it: "Files" semibold; on the right, 12px `dim`, the shown folder's name. With a file open: a `←` on the left and, on the right, the file's 14px icon and its path.
-- **Tree**, 6px padding; rows 28px, 7px radius, `hover` background on hover, 13px text: 8px + 18px per depth; a 12px chevron (`dim`) for folders, an empty 12px slot for files; the item's **16px full-colour icon** (Material Icon Theme, drawn with `image()`); the name, truncated; the git mark on the right, 11px (`A` in `ansi2`, `M` in `blocked`, `D`/`U` in `ansi1`). Folders first, then files, each alphabetical; `.git` and the mod's own `.herdr-upload.*` / `.herdr-download.*` folders are never listed.
+- **Tree**, 6px padding; rows 28px, 7px radius, the selected row (last clicked or right-clicked) on `selected`, `hover` background on hover, 13px text: 8px + 18px per depth; a 12px chevron (`dim`) for folders, an empty 12px slot for files; the item's **16px full-colour icon** (Material Icon Theme, drawn with `image()`); the name, truncated; the git mark on the right, 11px (`A` in `ansi2`, `M` in `blocked`, `D`/`U` in `ansi1`). Folders first, then files, each alphabetical; `.git` and the mod's own `.herdr-upload.*` / `.herdr-download.*` folders are never listed.
 - **Transfer line**, only while something transfers: 30px at the bottom, 1px `border` on top, 12px `muted`: a 12px spinner (`working`, one turn per 900 ms) and "Downloading a.txt…", "Uploading folder…" or "Transferring 3…".
 - **Menu** (popup at the pointer, 250px wide, `popover`, 5px padding, 12.8px text): 31px rows, 7px radius, `hover` on the row under the pointer or picked with ↑/↓; a 14px glyph in `muted` and the label in `foreground`. Delete is in `ansi1` (glyph and text) below a 1px `border` divider (4px vertical margin, 7px side margin). Items:
   - file: Download to Downloads, Paste here, Copy path, Reveal in Finder (local only), divider, Delete…
@@ -25,6 +25,7 @@ Herdr's Files panel with file transfer and VS Code's file icons. Right-click a f
 | Right-click a row or the tree's empty space | The menu for that item / for the shown folder; Esc or a click outside closes it; Enter picks |
 | Download | Copies to `~/Downloads` under a free name (`a (1).txt`, `folder (1)`); remote: `scp -r -p` from the machine's ssh address; local: `cp -R -p`. Toast "Downloaded a.txt" with the path, or the scp error |
 | Paste | Reads the file paths Finder put on the clipboard; uploads them into the folder (a file's: its parent; the empty space: the shown folder). "Nothing to paste" toast when the clipboard holds no files |
+| Click a row, then ⌘V | Paste into the selected folder, beside the selected file; with nothing selected (a press on empty tree space clears it, so does Esc) into the shown folder |
 | Drop files from Finder | On a folder: into it; on a file: beside it; on empty space: into the shown folder |
 | Upload finishes | Items move into place under free names (never overwriting); toast "Uploaded a.txt" or "Uploaded 3 items"; the tree refreshes |
 | Delete… → Delete (or Enter) | `rm -rf` on the item's machine; toast "Deleted a.txt"; the tree refreshes; an open preview of it closes. Cancel or Esc does nothing |
@@ -48,6 +49,7 @@ The panel follows the focused pane's folder (on its machine), refreshes every 10
 - **`exec` with `on` takes an argument array.** Run remote steps (mktemp, place, rm) through it, not through `ssh host "cmd"`, which needs quoting.
 - **ssh needs no prompts:** `-o BatchMode=yes -o ConnectTimeout=15`, or a transfer hangs forever.
 - **A popup's `cx` tasks die with it**, so never run the action in the menu copy.
+- ⌘V needs the keyboard: the panel's root has `track_focus(handle)` and `on_key_down` comparing `event.keystroke === "cmd-v"`, and a row click calls `handle.focus()`. A layout block doesn't get the keyboard by itself.
 - The name `LANG` is already used (the preview's language map); the language key is `LANG_KEY`.
 - Refuse to delete the shown folder itself or a path with fewer than two parts (`/etc`, `/home`).
 - Paste, Copy path, Reveal in Finder and the language check are macOS only. Windows and Linux are not supported.
@@ -59,5 +61,6 @@ The panel follows the focused pane's folder (on its machine), refreshes every 10
 - In a remote space, Download on a file puts it in `~/Downloads`; doing it twice gives `name (1).ext`; Download on a folder brings its dotfiles too.
 - Copy a file and a folder in Finder, then Paste into this folder on a remote folder: both appear there; pasting again gives `name (1)` copies; no `.herdr-upload.*` folder is left.
 - Dropping a file from Finder onto a folder uploads it into that folder.
+- Clicking a remote folder and pressing ⌘V with a file copied in Finder uploads it there; with no files on the clipboard a "Nothing to paste" toast shows.
 - Delete… opens the confirmation with the machine and path; Esc leaves the file; Delete removes it and the row disappears.
 - With macOS in Russian the menu reads «Скачать в Загрузки»; otherwise "Download to Downloads".

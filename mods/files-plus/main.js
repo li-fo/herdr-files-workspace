@@ -193,6 +193,9 @@ export default class Files extends View {
     // Which panel a menu choice is for: the one that opened the menu.
     this.me = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     this.jobs = [];
+    // ⌘V pastes into the selected row's folder: the panel takes the keyboard when clicked.
+    this.keys = cx.focus_handle();
+    this.selected = null; // { path, dir } inside the shown folder
     cx.spawn(async cx => {
       const r = await exec("defaults", ["read", "-g", "AppleLanguages"]).catch(() => null);
       const lang = /^\W*"?ru/m.test(r?.stdout?.split("\n").find(l => /\w/.test(l) && !/^\s*\(/.test(l)) ?? "") ? "ru" : "en";
@@ -227,7 +230,7 @@ export default class Files extends View {
     const { cwd, on } = location(), context = key();
     if (context !== this.context) {
       this.context = context; this.root = cwd; this.on = on; this.entries = new Map(); this.folders = new Set();
-      this.pending = new Set(); this.marks = {}; this.show(null); this.watched = null; this.error = null; this.limited = false;
+      this.pending = new Set(); this.marks = {}; this.selected = null; this.show(null); this.watched = null; this.error = null; this.limited = false;
     }
     if (!cwd) return;
     this.loading = true;
@@ -322,10 +325,7 @@ export default class Files extends View {
         } else if (action === "download") {
           await this.download(path, name, dir, on);
         } else if (action === "paste") {
-          const r = await exec("osascript", ["-l", "JavaScript", "-e", CLIPBOARD]);
-          const files = r.code === 0 ? JSON.parse(r.stdout.trim() || "[]") : [];
-          if (!files.length) return notify({ title: T().nothingToPaste, body: T().nothingToPasteBody, level: "warning", timeout: 5000 });
-          await this.upload(files, dir ? path : parentOf(path), on);
+          await this.paste(dir ? path : parentOf(path), on);
         } else if (action === "delete-yes") {
           // Never the shown folder itself, the home folder or a root-level path.
           if (path === this.root || path.split("/").filter(Boolean).length < 2) throw new Error(T().tooDangerous(path));
@@ -339,6 +339,27 @@ export default class Files extends View {
         const what = { download: T().downloadFailed(name), paste: T().uploadFailed(), "delete-yes": T().deleteFailed(name) }[action] ?? T().failed;
         notify({ title: what, body: String(e.message ?? e), level: "error" });
       }
+      cx.notify();
+    });
+  }
+
+  // Files copied in Finder, uploaded into folder (absolute, on the machine `on`).
+  async paste(folder, on) {
+    const r = await exec("osascript", ["-l", "JavaScript", "-e", CLIPBOARD]);
+    const files = r.code === 0 ? JSON.parse(r.stdout.trim() || "[]") : [];
+    if (!files.length) return notify({ title: T().nothingToPaste, body: T().nothingToPasteBody, level: "warning", timeout: 5000 });
+    await this.upload(files, folder, on);
+  }
+
+  // ⌘V: into the selected folder, beside the selected file, else into the shown folder.
+  pasteKey(cx) {
+    if (!this.root) return;
+    const sel = this.selected;
+    const folder = !sel ? this.root : sel.dir ? `${this.root}/${sel.path}` : parentOf(`${this.root}/${sel.path}`);
+    const on = this.on ?? null;
+    cx.spawn(async cx => {
+      try { await this.paste(folder, on); }
+      catch (e) { notify({ title: T().uploadFailed(), body: String(e.message ?? e), level: "error" }); }
       cx.notify();
     });
   }
@@ -467,14 +488,20 @@ export default class Files extends View {
         .child(button("yes", T().confirmDelete, t.ansi1, t.background, t.ansi1, yes)));
   }
 
+  select(path, dir) {
+    this.selected = { path, dir };
+    this.keys?.focus();
+  }
+
   rows(prefix, depth, out, t, dark) {
     if (out.length >= TOTAL || depth > 40) return out;
     for (const entry of this.entries.get(prefix) ?? []) {
       if (out.length >= TOTAL) break;
       const path = prefix ? `${prefix}/${entry.name}` : entry.name, open = this.folders.has(path), mark = this.marks[`${this.root}/${path}`];
-      out.push(h_flex().id(`file-${path}`).h(28).flex_none().pl(8 + depth * 18).pr(8).gap(7).items_center().rounded(7).cursor_pointer().hover(s => s.bg(t.hover))
-        .on_click((_e, cx) => entry.dir ? this.toggle(path, cx) : this.show(path, cx))
-        .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.openMenu(path, entry.dir); })
+      out.push(h_flex().id(`file-${path}`).h(28).flex_none().pl(8 + depth * 18).pr(8).gap(7).items_center().rounded(7).cursor_pointer()
+        .when(this.selected?.path === path, el => el.bg(t.selected)).hover(s => s.bg(t.hover))
+        .on_click((_e, cx) => { this.select(path, entry.dir); entry.dir ? this.toggle(path, cx) : this.show(path, cx); })
+        .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.select(path, entry.dir); cx.notify(); this.openMenu(path, entry.dir); })
         .on_drop((e, cx) => { cx.stop_propagation(); this.drop(e.paths, entry.dir ? path : prefix, cx); })
         .child(entry.dir ? svg(`${DIR}/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
         .child(image(icon(path, entry.dir, open, dark)).size(16).flex_none())
@@ -491,7 +518,11 @@ export default class Files extends View {
     this.take(cx);
     if (key() !== this.context) this.refresh(cx);
     const t = theme(), dark = Boolean(settings().dark);
-    return v_flex().id("files").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
+    return v_flex().id("files").track_focus(this.keys).size_full().min_h(0)
+      .on_key_down((e, cx) => {
+        if (e.keystroke === "cmd-v") { cx.stop_propagation(); this.pasteKey(cx); }
+        else if (e.keystroke === "escape" && this.selected) { cx.stop_propagation(); this.selected = null; cx.notify(); }
+      }).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
         .when(Boolean(this.file), el => el.child(div().id("files-back").w(20).cursor_pointer().text_color(t.muted).on_click((_e, cx) => { this.show(null); cx.notify(); }).child("←")))
         .child(div().font_semibold().child("Files"))
@@ -499,6 +530,7 @@ export default class Files extends View {
           .when(Boolean(this.file), el => el.child(image(icon(this.file, false, false, dark)).size(14).flex_none()))
           .child(div().min_w(0).truncate().child(this.file ?? this.root?.split(/[\\/]/).pop() ?? ""))))
       .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6)
+        .on_mouse_down("left", (_e, cx) => { this.selected = null; this.keys.focus(); cx.notify(); })
         .on_mouse_down("right", () => this.root && this.openMenu("", true))
         .on_drop((e, cx) => this.drop(e.paths, "", cx)).children(this.rows("", 0, [], t, dark))
         .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
