@@ -87,7 +87,7 @@ const downloaded = [];
 try {
   for (let i=0;i<2;i++) {
     const st = path.join(app,'data/files-transfer',`download-${i}`);
-    await ok('download',[testFile,'unused',testName,st,'cp','0']); await waitJob(st);
+    await ok('download',[testFile,'',testName,st,'cp','0']); await waitJob(st);
     const result = fs.readFileSync(st+'.dest','utf8'); downloaded.push(result);
     assert.equal(fs.readFileSync(result,'utf8'),'synthetic transfer test');
   }
@@ -100,6 +100,23 @@ try {
   }
 }
 console.log('PASS detached downloads, Windows Downloads folder, duplicate names');
+const custom = path.join(testRoot, "받은 파일 ' [custom] $(literal)");
+fs.mkdirSync(custom);
+for (let i=0;i<2;i++) {
+  const st = path.join(app,'data/files-transfer',`custom-${i}`);
+  await ok('download',[testFile,custom,testName,st,'cp','0']); await waitJob(st);
+  const result = fs.readFileSync(st+'.dest','utf8');
+  assert.equal(path.dirname(result),custom);
+  assert.equal(fs.readFileSync(result,'utf8'),'synthetic transfer test');
+}
+assert(fs.existsSync(path.join(custom,testName.replace(/\.txt$/,' (1).txt'))));
+assert.equal((await windows('download',[testFile,'relative-folder',testName,path.join(app,'data/files-transfer','relative'),'cp','0'])).code,1);
+console.log('PASS custom download directory, special characters, collision names, invalid-path rejection');
+const selfDownload = path.join(app,'data/files-transfer','self-download');
+await ok('download',[folder,path.join(folder,'inside'),'folder',selfDownload,'cp','1']);
+await waitJob(selfDownload,'1');
+assert(!fs.existsSync(path.join(folder,'inside')));
+console.log('PASS downloading a folder inside itself is refused before creating staging files');
 const listingViaAdapter = await exec('sh',['-c','wc -c < "$1"','size',renamed]);
 assert.equal(Number(listingViaAdapter.stdout.trim()),Buffer.byteLength('테스트\nhello'));
 console.log('PASS JavaScript adapter -> PowerShell JSON/quoting round trip');

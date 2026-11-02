@@ -13,6 +13,7 @@ import { v_flex, h_flex, Editor, EditorState, TextView, InputState, Input } from
 import { spaces, panes, focused, run, readTextFile, watchFolder, theme, settings, window, props, openOverlay, closeOverlay, shared, setShared, notify, hc, appHome, home } from "herdr";
 import { exec, windows, isWindows } from "./windows.js";
 import ICONS from "./icons.js";
+import { downloadDirectory, chooseDownloadDirectory } from "./download-settings.js";
 
 // Right-click menu on a file or folder: download it to ~/Downloads (scp from a remote
 // machine, cp here), paste files copied in Finder into it (upload), copy its path, show it
@@ -98,6 +99,7 @@ const STRINGS = {
   en: {
     pasteHere: "Paste here", pasteInto: "Paste into this folder", pasteBeside: "Paste here",
     download: "Download to Downloads", downloadFolder: "Download folder to Downloads",
+    downloadTo: (folder) => `Download to ${folder}`, chooseDownload: "Download to…",
     copyPath: "Copy path", reveal: "Reveal in Finder", delete: "Delete…",
     pathCopied: "Path copied", nothingToPaste: "Nothing to paste",
     nothingToPasteBody: "Copy a file or folder in Finder (⌘C), then choose Paste.",
@@ -122,6 +124,7 @@ const STRINGS = {
   ru: {
     pasteHere: "Вставить сюда", pasteInto: "Вставить в эту папку", pasteBeside: "Вставить рядом",
     download: "Скачать в Загрузки", downloadFolder: "Скачать папку в Загрузки",
+    downloadTo: (folder) => `Скачать в ${folder}`, chooseDownload: "Скачать в…",
     copyPath: "Скопировать путь", reveal: "Показать в Finder", delete: "Удалить…",
     pathCopied: "Путь скопирован", nothingToPaste: "Нечего вставить",
     nothingToPasteBody: "Скопируйте файл или папку в Finder (⌘C), потом выберите «Вставить».",
@@ -180,7 +183,8 @@ const MENU = (target, t = T()) => target.root
   ? [["paste", t.pasteHere, "paste.svg"], ["copy", t.copyPath, "copy.svg"], null,
      ["new-file", t.newFile, "file-plus.svg"], ["new-folder", t.newFolder, "folder-plus.svg"]]
   : [
-      ["download", target.dir ? t.downloadFolder : t.download, "download.svg"],
+      ["download", downloadDirectory() ? t.downloadTo(downloadDirectory()) : target.dir ? t.downloadFolder : t.download, "download.svg"],
+      ["download-to", t.chooseDownload, "folder-plus.svg"],
       ["paste", target.dir ? t.pasteInto : t.pasteBeside, "paste.svg"],
       ["copy", t.copyPath, "copy.svg"],
       ...(target.on ? [] : [["reveal", t.reveal, "finder.svg"]]),
@@ -461,7 +465,7 @@ export default class Files extends View {
     const target = path
       ? { path: `${this.root}/${path}`, name: path.split("/").pop(), dir, on: this.on ?? null, from: this.me }
       : { path: this.root, name: this.root.split("/").pop(), dir: true, root: true, on: this.on ?? null, from: this.me };
-    openOverlay({ mod: "files-transfer", kind: "popup", width: 250, height: menuHeight(MENU(target)), props: { menu: target } });
+    openOverlay({ mod: "files-transfer", kind: "popup", width: downloadDirectory() ? 460 : 250, height: menuHeight(MENU(target)), props: { menu: target } });
   }
 
   // A choice made in the menu or the confirmation, for this panel.
@@ -491,8 +495,8 @@ export default class Files extends View {
         } else if (action === "reveal") {
           const r = await exec("open", ["-R", path]);
           if (r.code !== 0) throw new Error(r.stderr || "Cannot reveal this item");
-        } else if (action === "download") {
-          await this.download(path, name, dir, on);
+        } else if (action === "download" || action === "download-to") {
+          await this.download(path, name, dir, on, action === "download-to");
         } else if (action === "paste") {
           await this.paste(dir ? path : parentOf(path), on);
         } else if (action === "trash") {
@@ -530,7 +534,7 @@ export default class Files extends View {
           this.refresh(cx);
         }
       } catch (e) {
-        const what = { download: T().downloadFailed(name), paste: T().uploadFailed(), "delete-yes": T().deleteFailed(name),
+        const what = { download: T().downloadFailed(name), "download-to": T().downloadFailed(name), paste: T().uploadFailed(), "delete-yes": T().deleteFailed(name),
           trash: T().trashFailed(name), "create-file": T().createFailed(req.value), "create-folder": T().createFailed(req.value),
           "rename-yes": T().renameFailed(name) }[action] ?? T().failed;
         notify({ title: what, body: String(e.message ?? e), level: "error" });
@@ -569,12 +573,17 @@ export default class Files extends View {
     this.selected = { path: rel, dir };
   }
 
-  async download(path, name, dir, on) {
+  async download(path, name, dir, on, choose = false) {
+    // Cancel before resolving a remote or starting a worker. Herdr persists the selection.
+    const selected = choose ? await chooseDownloadDirectory(T().chooseDownload) : downloadDirectory();
+    if (choose && !selected) return;
+    // An empty Windows destination selects the actual Windows Downloads known folder.
+    const destination = selected ?? (isWindows() ? "" : `${home()}/Downloads`);
     const src = on ? `${await sshTarget(on)}:${path}` : path;
     const status = `${appHome()}/data/files-transfer/${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const r = await exec("sh", ["-c", FETCH, "fetch", src, `${home()}/Downloads`, name, status, on ? "scp" : "cp", dir ? "1" : "0"]);
+    const r = await exec("sh", ["-c", FETCH, "fetch", src, destination, name, status, on ? "scp" : "cp", dir ? "1" : "0"]);
     if (r.code !== 0) throw new Error((r.stderr || `exit ${r.code}`).trim());
-    this.jobs.push({ kind: "download", status, name });
+    this.jobs.push({ kind: "download", status, name, destination });
   }
 
   // Local files into dir on the shown folder's machine: into a temporary folder there
@@ -611,8 +620,8 @@ export default class Files extends View {
         const log = (await readTextFile(`${job.status}.log`).catch(() => null))?.trim();
         const fail = log?.split("\n").pop() || T().code(code.trim());
         if (job.kind === "download") {
-          const dest = (await readTextFile(`${job.status}.dest`).catch(() => null)) || `${home()}/Downloads/${job.name}`;
-          if (ok) notify({ title: T().downloaded(dest.split("/").pop()), body: dest.replace(home(), "~"), level: "success", timeout: 6000 });
+          const dest = (await readTextFile(`${job.status}.dest`).catch(() => null)) || `${job.destination || `${home()}/Downloads`}/${job.name}`;
+          if (ok) notify({ title: T().downloaded(dest.split(/[\\/]/).pop()), body: dest.replace(home(), "~"), level: "success", timeout: 6000 });
           else notify({ title: T().downloadFailed(job.name), body: fail, level: "error" });
         } else {
           let placed = false;

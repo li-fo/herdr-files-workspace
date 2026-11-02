@@ -101,6 +101,11 @@ function Downloads {
     if (-not $p) { $p = Join-Path $env:USERPROFILE 'Downloads' }
     [Environment]::ExpandEnvironmentVariables($p)
 }
+function DownloadDirectory([string]$selected) {
+    if ([string]::IsNullOrWhiteSpace($selected)) { return (Full (Downloads)) }
+    if ($selected -notmatch '^(?:[A-Za-z]:[\\/]|\\\\[^\\]+\\[^\\]+)') { throw 'Choose an absolute download folder.' }
+    return (Full $selected)
+}
 
 try {
     switch ($r.action) {
@@ -167,6 +172,7 @@ try {
         }
         'download' {
             [void](StatusPath $a[3]); ValidName $a[2]
+            $a[1] = DownloadDirectory $a[1]
             LaunchWorker 'download-worker' $a
         }
         'send' {
@@ -183,7 +189,13 @@ try {
         'download-worker' {
             $st = StatusPath $a[3]; $tmp = $null; $result = '1'
             try {
-                $dir = Downloads
+                $dir = DownloadDirectory $a[1]
+                if ($a[4] -ne 'scp') {
+                    $src = Full $a[0]
+                    if ([IO.Directory]::Exists($src) -and ($dir.TrimEnd('\') -eq $src.TrimEnd('\') -or (Under $dir $src))) {
+                        throw 'Choose a download folder outside the source folder.'
+                    }
+                }
                 [void][IO.Directory]::CreateDirectory($dir)
                 $tmp = NewTemp $dir 'download'; $name = [string]$a[2]; ValidName $name
                 $target = Join-Path $tmp $name

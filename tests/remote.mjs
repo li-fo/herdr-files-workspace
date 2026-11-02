@@ -51,8 +51,10 @@ try{
   assert.equal(await remote('cat',dir+"/folder ' [1] (1)/.hidden"),'hidden');
   console.log('PASS Windows -> SSH/SFTP upload, Unicode/quotes/spaces, hidden files, duplicate names');
   const st=path.join(app,'data/files-transfer','download');
-  await op('download',[`${target}:${dir}/${name}`,'unused',name,st,'scp','0']);await waitJob(st);
+  const custom=path.join(root,"다운로드 ' [custom]");fs.mkdirSync(custom);
+  await op('download',[`${target}:${dir}/${name}`,custom,name,st,'scp','0']);await waitJob(st);
   const saved=fs.readFileSync(st+'.dest','utf8');downloads.push(saved);
+  assert.equal(path.dirname(saved),custom);
   assert.equal(fs.readFileSync(saved,'utf8'),text);
   console.log('PASS SSH/SFTP -> Windows download: byte-identical round trip');
 }finally{
