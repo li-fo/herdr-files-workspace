@@ -10,7 +10,8 @@
 // English/Russian text.
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState, TextView, InputState, Input } from "gpui-base";
-import { spaces, panes, focused, run, exec, readTextFile, watchFolder, theme, settings, window, props, openOverlay, closeOverlay, shared, setShared, notify, hc, appHome, home } from "herdr";
+import { spaces, panes, focused, run, readTextFile, watchFolder, theme, settings, window, props, openOverlay, closeOverlay, shared, setShared, notify, hc, appHome, home } from "herdr";
+import { exec, windows, isWindows } from "./windows.js";
 import ICONS from "./icons.js";
 
 // Right-click menu on a file or folder: download it to ~/Downloads (scp from a remote
@@ -144,7 +145,12 @@ const STRINGS = {
     remoteDelete: "На этой машине нет Корзины: удаление навсегда.",
   },
 };
-const T = () => STRINGS[shared(LANG_KEY)] ?? STRINGS.en;
+const T = () => {
+  const t = STRINGS[shared(LANG_KEY)] ?? STRINGS.en;
+  return isWindows() ? { ...t, reveal: "Show in File Explorer", moveToTrash: "Move to Recycle Bin",
+    openInPreview: "Open in default app", nothingToPasteBody: "Copy files in File Explorer (Ctrl+C), then paste here (Ctrl+V).",
+    badName: "Enter a valid file name (no reserved names or path characters)." } : t;
+};
 
 // Previews: Markdown is drawn formatted (with a Source toggle); images are copied into the
 // app folder first, because image() only reads from there, and the formats GPUI can't draw
@@ -163,7 +169,11 @@ const PP_MARKDOWN = /\.(md|markdown)$/i;
 const PP_MEDIA = /\.(png|jpe?g|webp|svg|pdf)$/i;
 const bytesText = (n) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`;
 
-const parentOf = path => path.slice(0, path.lastIndexOf("/")) || "/";
+const parentOf = path => {
+  const normalized = path.replaceAll("\\", "/");
+  const parent = normalized.slice(0, normalized.lastIndexOf("/")) || "/";
+  return /^[A-Za-z]:$/.test(parent) ? parent + "/" : parent;
+};
 
 // A menu row is [action, label, icon]; null draws a divider.
 const MENU = (target, t = T()) => target.root
@@ -183,7 +193,8 @@ const MENU = (target, t = T()) => target.root
       target.on ? ["delete", t.delete, "trash.svg"] : ["trash", t.moveToTrash, "trash.svg"],
     ];
 // A name typed for a new entry or a rename: one path component.
-const validName = (n) => n !== "" && n !== "." && n !== ".." && !/[\/\u0000-\u001f]/.test(n);
+const validName = (n) => n !== "" && n !== "." && n !== ".." && !/[\/\u0000-\u001f]/.test(n)
+  && (!isWindows() || (!/[<>:"\\|?*]/.test(n) && !/[. ]$/.test(n) && !/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(n)));
 // Run on the entry's machine. Each refuses to replace what is there (exit 17).
 const MAKE_FILE = 'set -C; [ -e "$1" ] || [ -L "$1" ] && exit 17; : > "$1"';
 const MAKE_FOLDER = '[ -e "$1" ] || [ -L "$1" ] && exit 17; mkdir -- "$1"';
@@ -194,7 +205,8 @@ function location() {
   const space = spaces().find(s => s.active), f = focused();
   const pane = f?.pane ? panes().find(p => p.pane === f.pane) : null;
   const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
-  return { cwd: pane?.cwd || f?.cwd || space?.folder, on };
+  const cwd = pane?.cwd || f?.cwd || space?.folder;
+  return { cwd: !on && isWindows() ? cwd?.replaceAll("\\", "/") : cwd, on };
 }
 const key = () => JSON.stringify(location());
 const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", toml: "yaml", jsonc: "json", svelte: "html", vue: "html" };
@@ -223,7 +235,7 @@ function icon(path, dir, open, dark) {
 
 async function directory(path, on) {
   if (!on && window()?.platform === "windows") {
-    const r = await exec("powershell", ["-NoProfile", "-Command", "& { param($p) @(Get-ChildItem -LiteralPath $p -Force -ErrorAction Stop | Where-Object Name -ne '.git' | Select-Object -First 501 | ForEach-Object { @{ name=$_.Name; dir=($_.PSIsContainer -and -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint)) } }) | ConvertTo-Json -Compress }", path]);
+    const r = await windows("list", [path]);
     if (r.code !== 0) throw new Error(r.stderr || "Cannot list this folder");
     const result = JSON.parse(r.stdout || "[]");
     return Array.isArray(result) ? result : [result];
@@ -473,10 +485,12 @@ export default class Files extends View {
     cx.spawn(async cx => {
       try {
         if (action === "copy") {
-          await exec("sh", ["-c", 'printf %s "$1" | pbcopy', "copy", path]);
+          const r = await exec("sh", ["-c", 'printf %s "$1" | pbcopy', "copy", path]);
+          if (r.code !== 0) throw new Error(r.stderr || "Cannot copy the path");
           notify({ title: T().pathCopied, body: path, level: "info", timeout: 2500 });
         } else if (action === "reveal") {
-          await exec("open", ["-R", path]);
+          const r = await exec("open", ["-R", path]);
+          if (r.code !== 0) throw new Error(r.stderr || "Cannot reveal this item");
         } else if (action === "download") {
           await this.download(path, name, dir, on);
         } else if (action === "paste") {
@@ -528,6 +542,7 @@ export default class Files extends View {
   // Files copied in Finder, uploaded into folder (absolute, on the machine `on`).
   async paste(folder, on) {
     const r = await exec("osascript", ["-l", "JavaScript", "-e", CLIPBOARD]);
+    if (r.code !== 0) throw new Error(r.stderr || "Cannot read the file clipboard");
     const files = r.code === 0 ? JSON.parse(r.stdout.trim() || "[]") : [];
     if (!files.length) return notify({ title: T().nothingToPaste, body: T().nothingToPasteBody, level: "warning", timeout: 5000 });
     await this.upload(files, folder, on);
@@ -565,6 +580,7 @@ export default class Files extends View {
   // Local files into dir on the shown folder's machine: into a temporary folder there
   // first, then into place under free names (PLACE), so nothing is overwritten.
   async upload(files, dir, on) {
+    if (isWindows()) files = files.map(p => p.replaceAll("\\", "/"));
     const mk = await exec("mktemp", ["-d", `${dir}/.herdr-upload.XXXXXX`], { on });
     if (mk.code !== 0) throw new Error((mk.stderr || `exit ${mk.code}`).trim());
     const tmp = mk.stdout.trim();
@@ -581,8 +597,10 @@ export default class Files extends View {
 
   // Finished transfers write their exit code to the status file.
   poll(cx) {
-    if (!this.jobs?.length) return;
+    if (!this.jobs?.length || this.polling) return;
+    this.polling = true;
     cx.spawn(async cx => {
+      try {
       let changed = false;
       for (const job of [...this.jobs]) {
         const code = await readTextFile(job.status).catch(() => null);
@@ -597,22 +615,25 @@ export default class Files extends View {
           if (ok) notify({ title: T().downloaded(dest.split("/").pop()), body: dest.replace(home(), "~"), level: "success", timeout: 6000 });
           else notify({ title: T().downloadFailed(job.name), body: fail, level: "error" });
         } else {
+          let placed = false;
           try {
             if (!ok) throw new Error(fail);
             const r = await exec("sh", ["-c", PLACE, "place", job.tmp, job.dir], { on: job.on });
             if (r.code !== 0) throw new Error((r.stderr || `exit ${r.code}`).trim());
+            placed = true;
             const names = r.stdout.trim().split("\n").filter(Boolean);
             notify({ title: T().uploaded(names.length === 1 ? names[0] : T().items(names.length)),
               body: job.on ? `${job.on}:${job.dir}` : job.dir.replace(home(), "~"), level: "success", timeout: 6000 });
           } catch (e) {
-            notify({ title: T().uploadFailed(job.name), body: String(e.message ?? e), level: "error" });
+            notify({ title: T().uploadFailed(job.name), body: String(e.message ?? e) + (ok ? `\nStaged files kept at ${job.tmp}` : ""), level: "error" });
           }
-          await exec("rm", ["-rf", "--", job.tmp], { on: job.on }).catch(() => {});
+          if (placed || !ok) await exec("rm", ["-rf", "--", job.tmp], { on: job.on }).catch(() => {});
           this.refresh(cx);
         }
         await exec("rm", ["-f", job.status, `${job.status}.log`, `${job.status}.dest`]).catch(() => {});
       }
       if (changed) cx.notify();
+      } finally { this.polling = false; }
     });
   }
 
@@ -753,7 +774,7 @@ export default class Files extends View {
     const t = theme(), dark = Boolean(settings().dark);
     return v_flex().id("files").track_focus(this.keys).size_full().min_h(0)
       .on_key_down((e, cx) => {
-        if (e.keystroke === "cmd-v") { cx.stop_propagation(); this.pasteKey(cx); }
+        if (e.keystroke === (isWindows() ? "ctrl-v" : "cmd-v")) { cx.stop_propagation(); this.pasteKey(cx); }
         else if (e.keystroke === "escape" && this.selected) { cx.stop_propagation(); this.selected = null; cx.notify(); }
       })
       // Sizes arrive in window points; element sizes are given at zoom 1.
