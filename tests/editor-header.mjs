@@ -13,3 +13,12 @@ values.set('files-workspace.editor-action:file-a',{token:'instance-a',action:'sa
 values.set('files-workspace.editor-action:file-a',{token:'instance-a',action:'reload',id:3});doc.takeHeader({});assert.equal(reloads,1);
 doc.discardArmed=true;doc.publishHeader();assert.equal(values.get('files-workspace.editor:file-a').discard,true);
 console.log('PASS targeted header actions, stale-instance rejection, reload confirmation state and deduplicated status updates');
+
+const fresh=new Document();fresh.load=()=>{};
+fresh.init({key:'fresh',file:'/repo/note.md'},{timer:{every(){}},spawn(){}});
+assert.equal(fresh.markdown,true);assert.equal(fresh.previewMode,false);
+fresh.buffer={text:'unsaved text',dirty:true};fresh.editor={identity:'same-editor'};
+let prepared=0;fresh.preparePreview=()=>prepared++;
+fresh.togglePreview({notify(){}});assert(fresh.previewMode);assert.equal(prepared,1);
+fresh.togglePreview({notify(){}});assert(!fresh.previewMode);assert.equal(fresh.buffer.text,'unsaved text');assert(fresh.buffer.dirty);assert.equal(fresh.editor.identity,'same-editor');
+console.log('PASS Source default and preview switching preserves unsaved text and editor instance');

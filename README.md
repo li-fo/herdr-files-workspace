@@ -12,6 +12,9 @@ Repository: [li-fo/herdr-files-workspace-pr](https://github.com/li-fo/herdr-file
 - Reusable Space tabs for text editing and image viewing.
 - Native syntax highlighting, explicit Save/Ctrl+S, external-change checks,
   and local recovery drafts. No completion, language server or debugger.
+- Markdown opens in Source. Its header offers a read-only Preview, including
+  Mermaid diagrams rendered locally with bundled Pele. Switching modes keeps
+  unsaved edits and does not save the file.
 - Local and SSH remote editing of UTF-8 text up to 1 MiB. BOM and uniform LF/CRLF
   are preserved; binary files and mixed line endings are not editable.
 - Upload/paste/drag-and-drop, background downloads, and a remembered destination.
@@ -35,6 +38,8 @@ merges scoped save shortcuts, and checks the mod. See [WINDOWS.md](WINDOWS.md)
 for first-time layout setup, limitations, tests and rollback.
 
 Remote editing requires Python 3 on the remote POSIX host and working SSH/SCP.
+Mermaid previews require local Node.js (validated with Node 24); plain Markdown
+preview does not. No browser, CDN or diagram-rendering service is used.
 Preview Plus is optional and is not installed automatically. Its setup is
 recorded in [the upstream documentation](UPSTREAM.md#with-preview-plus).
 The legacy `install.sh` does not merge the editor shortcuts; Windows users

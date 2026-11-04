@@ -38,6 +38,21 @@ Transfers run in hidden worker processes. The UI polls their completion files. T
 
 ## Lightweight editor
 
+Markdown files always start in **Source**. **Preview** in the pane header shows
+the current buffer read-only, including unsaved edits; **Source** switches back
+without replacing the editor or saving the file. Ordinary Markdown uses Herdr's
+native TextView. Top-level fenced `mermaid` blocks use bundled Pele 1.13.0 via
+local Node.js (tested with Node 24), then native SVG images. Code-fence syntax
+errors are shown with the diagram source instead of breaking the document.
+No document content is uploaded. Temporary diagram files are stored in
+`data/files-workspace/markdown` and removed best-effort on tab close.
+
+Pele uses its own layout and does not exactly match Mermaid.js. External Mermaid
+plugins, arbitrary HTML labels and diagram interactions are not supported here;
+math labels need an additional renderer. Generated images fit the pane width.
+Diagram colors are captured when entering Preview; switch Source/Preview after
+changing themes. A diagram is limited to 50,000 source characters and 2,000 edges.
+
 Clicking a file opens a reusable tab in its Space. Text files use Herdr's native
 editor with extension-based syntax highlighting, line numbers, Save and Ctrl+S.
 There is no completion, language server, debugger or Markdown toolbar. Images

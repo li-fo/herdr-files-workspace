@@ -75,6 +75,7 @@ export default class Pane extends View {
       .child(div().flex_1().truncate().text_color(t.dim).child(file ? (file.on ? file.on + ":" : "") + file.file : folder(p.cwd)))
       .when(Boolean(editor), el => el
         .child(div().flex_none().text_color(t.dim).child(editor.saving ? "Saving…" : editor.dirty ? "Modified" : ""))
+        .when(editor.ready && editor.markdown, el => el.child(this.editorButton(t, file, editor, "preview", editor.preview ? "Source" : "Preview")))
         .when(editor.ready, el => el.child(this.editorButton(t, file, editor, "save", "Save")))
         .child(this.editorButton(t, file, editor, "reload", editor.discard ? "Discard & reload" : "Reload")))
       .when(st === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))

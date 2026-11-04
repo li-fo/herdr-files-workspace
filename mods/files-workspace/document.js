@@ -1,6 +1,8 @@
-import { div } from "gpui-kit";
-import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
-import { theme, settings, nextCommand, shared, run, focused, layout, setShared } from "herdr";
+import { markdownBlocks } from "./markdown-blocks.js";
+import { unlink } from "fs/promises";
+import { div, image } from "gpui-kit";
+import { v_flex, h_flex, Editor, EditorState, TextView } from "gpui-base";
+import { theme, settings, nextCommand, shared, run, focused, layout, setShared, exec, appHome, writeTextFile } from "herdr";
 import { TextBuffer } from "./text-buffer.js";
 import { TAB_KEY } from "./file-tabs.js";
 import { loadText, saveText } from "./remote-text.js";
@@ -15,6 +17,8 @@ export function language(file) {
 export default class Document {
   init(info, cx) {
     this.info = info;
+    this.markdown = /\.(md|markdown|mdown|mkd)$/i.test(info.file);
+    this.previewMode = false; this.previewFiles = []; this.previewRevision = 0;
     this.headerToken = `${Date.now()}-${Math.random()}`;
     this.error = null;
     this.saving = false;
@@ -49,6 +53,7 @@ export default class Document {
           font_family: settings().font_family, font_size: 13,
           syntax: { keyword: t.ansi5, string: t.ansi2, comment: t.dim, function: t.ansi4, type: t.ansi3, number: t.ansi1, constant: t.ansi6 } });
         this.editor?.release(); this.editor = editor; this.buffer = buffer; this.version = restored.version;
+        if (this.previewMode) this.preparePreview(cx);
         this.note = restored.note; this.error = loadError || null;
         editor.on("change", (_event, cx) => {
           this.buffer.text = editor.value(); this.discardArmed = false; this.draftPending = true;
@@ -63,7 +68,7 @@ export default class Document {
     });
   }
   publishHeader() {
-    const state = { token: this.headerToken, ready: Boolean(this.buffer), dirty: Boolean(this.buffer?.dirty), saving: Boolean(this.saving), loading: Boolean(this.loading), discard: Boolean(this.discardArmed) };
+    const state = { markdown: Boolean(this.markdown), preview: Boolean(this.previewMode), token: this.headerToken, ready: Boolean(this.buffer), dirty: Boolean(this.buffer?.dirty), saving: Boolean(this.saving), loading: Boolean(this.loading), discard: Boolean(this.discardArmed) };
     const encoded = JSON.stringify(state);
     if (encoded !== this.headerState) {
       this.headerState = encoded;
@@ -78,6 +83,56 @@ export default class Document {
     setShared(key, null);
     if (request.action === "save") this.save(cx);
     else if (request.action === "reload") this.reload(cx);
+    else if (request.action === "preview") this.togglePreview(cx);
+  }
+  togglePreview(cx) {
+    if (!this.markdown || !this.buffer || this.loading) return;
+    this.previewMode = !this.previewMode;
+    if (this.previewMode) this.preparePreview(cx);
+    this.publishHeader(); cx.notify();
+  }
+  preparePreview(cx) {
+    const revision = ++this.previewRevision;
+    this.previewBlocks = markdownBlocks(this.buffer.text);
+    const diagrams = this.previewBlocks.filter(block => block.kind === "mermaid");
+    this.previewError = null;
+    this.previewBusy = diagrams.length > 0;
+    if (!diagrams.length) return;
+    const t = theme();
+    const colors = { "--pele-bg": t.background, "--pele-fg": t.foreground, "--pele-muted": t.muted,
+      "--pele-line": t.foreground, "--pele-surface": t.surface, "--pele-surface-alt": t.raised,
+      "--pele-border": t.border, "--pele-accent": t.accent };
+    cx.spawn(async cx => {
+      const dir = `${appHome()}/data/files-workspace/markdown/${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const request = dir + "/request.json";
+      try {
+        await writeTextFile(request, JSON.stringify({ diagrams: diagrams.map(block => block.text), colors }), null);
+        this.previewFiles.push(request);
+        const result = await exec("node", [appHome() + "/mods/files-workspace/render-diagrams.mjs", request]);
+        if (result.code !== 0) throw new Error(result.stderr || "Diagram rendering failed. Node.js is required.");
+        const rendered = JSON.parse(result.stdout);
+        for (const item of rendered) if (item.file) this.previewFiles.push(item.file);
+        if (revision !== this.previewRevision) return;
+        rendered.forEach((item, i) => { diagrams[i].diagram = item; });
+      } catch (error) { if (revision === this.previewRevision) this.previewError = String(error.message || error); }
+      finally { if (revision === this.previewRevision) this.previewBusy = false; cx.notify(); }
+    });
+  }
+  renderPreview() {
+    const t = theme();
+    return v_flex().id("markdown-preview").flex_1().min_h(0).overflow_y_scrollbar().p(18).gap(12)
+      .on_size_change((size, cx) => { const width = Math.max(100, size.width / (settings().zoom || 1) - 36); if (width !== this.previewWidth) { this.previewWidth = width; cx.notify(); } })
+      .children((this.previewBlocks || []).map((block, i) => {
+        if (block.kind === "markdown") return div().flex_none().text_size(14).child(TextView.markdown(`preview-text-${this.previewRevision}-${i}`, block.text).selectable(true));
+        const result = block.diagram;
+        if (result?.file) {
+          const scale = Math.min(1, (this.previewWidth || 900) / result.width);
+          return div().flex_none().child(image(result.file.replaceAll("\\", "/").replace(appHome().replaceAll("\\", "/") + "/", "")).w(result.width * scale).h(result.height * scale));
+        }
+        return v_flex().flex_none().gap(6).p(12).bg(t.surface)
+          .child(div().text_color(t.muted).child(result?.error || this.previewError || "Rendering Mermaid…"))
+          .when(Boolean(result?.error || this.previewError), el => el.child(TextView.markdown(`diagram-error-${i}`, "```text\n" + block.text + "\n```")));
+      }));
   }
   updateTitle() {
     this.publishHeader();
@@ -108,6 +163,7 @@ export default class Document {
     persistDraft(this.info.key, this.buffer, this.version); this.draftPending = false;
   }
   close() { this.flushDraft(); this.editor?.release();
+    for (const file of this.previewFiles || []) unlink(file).catch(() => {});
     const key = "files-workspace.editor:" + this.info.key;
     if (shared(key)?.token === this.headerToken) setShared(key, null);
   }
@@ -121,9 +177,10 @@ export default class Document {
         .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(pathInHeader ? "" : (this.info.on ? this.info.on + ":" : "") + this.info.file))
         .child(div().text_color(t.dim).child(this.saving ? "Saving…" : this.buffer?.dirty ? "Modified" : ""))
         .when(Boolean(this.buffer), el => el.child(button("file-save", "Save", cx => this.save(cx))))
+        .when(this.markdown && Boolean(this.buffer), el => el.child(button("file-preview", this.previewMode ? "Source" : "Preview", cx => this.togglePreview(cx))))
         .child(button("file-reload", this.discardArmed ? "Discard & reload" : "Reload", cx => this.reload(cx)))))
       .when(Boolean(this.error) && Boolean(this.editor), el => el.child(div().px(12).py(8).text_size(12).text_color(t.ansi1).child(this.error)))
       .when(Boolean(this.note), el => el.child(div().px(12).py(6).text_size(12).text_color(t.muted).child(this.note)))
-      .child(this.editor ? Editor.new(this.editor).flex_1().min_h(0) : div().p(16).text_color(t.muted).child(this.error || "Loading file…"));
+      .child(this.previewMode ? this.renderPreview() : this.editor ? Editor.new(this.editor).flex_1().min_h(0) : div().p(16).text_color(t.muted).child(this.error || "Loading file…"));
   }
 }
