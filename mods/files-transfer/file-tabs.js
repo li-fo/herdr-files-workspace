@@ -14,6 +14,8 @@ export async function openFile({ space, on, root, file }) {
   const key = fileKey(space, on, file);
   const existing = (shared(TAB_KEY) || {})[key];
   if (existing && panes().some(p => p.tab === existing.tab)) {
+    // Reusing a tab must not restore the folder from its first opening.
+    setShared(TAB_KEY, { ...(shared(TAB_KEY) || {}), [key]: { ...existing, root, on: on || null } });
     run("tab.select", { id: existing.tab }); return;
   }
   if (opening.has(key)) return;

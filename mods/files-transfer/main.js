@@ -208,15 +208,31 @@ const MAKE_FOLDER = '[ -e "$1" ] || [ -L "$1" ] && exit 17; mkdir -- "$1"';
 const MOVE = '[ -e "$2" ] || [ -L "$2" ] && exit 17; mv -- "$1" "$2"';
 const menuHeight = list => list.reduce((h, it) => h + (it ? MENU_ROW : 9), 10);
 
+// The sidebar follows terminal navigation, not the parent directory of an editor.
+const browseLocations = new Map();
 function location() {
   if (props()?.viewer) return { cwd: props().viewer.root, on: props().viewer.on };
   const space = spaces().find(s => s.active), f = focused();
   const pane = f?.pane ? panes().find(p => p.pane === f.pane) : null;
   const fileTab = tabContext(f?.tab, space?.id);
-  if (fileTab) return { cwd: fileTab.root, on: fileTab.on };
+  if (fileTab) {
+    const previous = browseLocations.get(space?.id);
+    if (previous && previous.on === fileTab.on) return previous;
+    const current = { cwd: fileTab.root, on: fileTab.on };
+    browseLocations.set(space?.id, current);
+    return current;
+  }
   const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
   const cwd = pane?.cwd || f?.cwd || space?.folder;
-  return { cwd: !on && isWindows() ? cwd?.replaceAll("\\", "/") : cwd, on };
+  const current = { cwd: !on && isWindows() ? cwd?.replaceAll("\\", "/") : cwd, on };
+  // A shell cd into docs/tmp must not shrink an already broader project tree.
+  const previous = browseLocations.get(space?.id);
+  const base = previous?.on === on ? previous.cwd : space?.folder?.replaceAll("\\", "/");
+  const normalize = path => !on && isWindows() ? path?.toLowerCase() : path;
+  if (base && current.cwd && (normalize(current.cwd) === normalize(base)
+    || normalize(current.cwd).startsWith(normalize(base).replace(/\/$/, "") + "/"))) current.cwd = base;
+  if (current.cwd && space?.id) browseLocations.set(space.id, current);
+  return current;
 }
 const key = () => JSON.stringify(location());
 const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", toml: "yaml", jsonc: "json", svelte: "html", vue: "html" };

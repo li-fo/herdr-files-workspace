@@ -18,3 +18,7 @@ live.splice(0);await api.openFile(file);assert.equal(calls.at(-1)[0],'herdr-app'
 console.log('PASS file tab deduplication, Windows path identity, pinned folder/machine, image viewer routing and reopening closed tabs');
 
 assert.equal(Object.keys(state.get('files-transfer.opening-tab')).length,0);
+
+const lastTab=live[0].tab;
+await api.openFile({...file,root:'F:/'});
+assert.equal(api.tabContext(lastTab).root,'F:/');
