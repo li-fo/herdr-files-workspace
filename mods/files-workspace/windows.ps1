@@ -132,6 +132,39 @@ try {
             if ([IO.Directory]::Exists($p)) { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($p, 'OnlyErrorDialogs', 'SendToRecycleBin', 'ThrowException') }
             else { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($p, 'OnlyErrorDialogs', 'SendToRecycleBin', 'ThrowException') }
         }
+        'prepare-image' {
+            $src = Full $a[0]
+            $item = Get-Item -LiteralPath $src -Force
+            if ($item.PSIsContainer) { throw 'Expected an image file.' }
+            AssertNoLinks $src
+            if ($item.Length -gt [long]$a[1]) { throw 'Image exceeds the preview size limit.' }
+            $dir = Join-Path (Join-Path $dataRoot 'preview') ([Guid]::NewGuid().ToString('N'))
+            [void][IO.Directory]::CreateDirectory($dir)
+            try {
+                $ext = [IO.Path]::GetExtension($src).ToLowerInvariant()
+                $file = Join-Path $dir ('image' + $ext)
+                [IO.File]::Copy($src, $file, $false)
+                $bytes = (Get-Item -LiteralPath $file).Length
+                if ($bytes -gt [long]$a[1]) { throw 'Image exceeds the preview size limit.' }
+                $w = $null; $h = $null
+                if ($ext -ne '.svg') {
+                    Add-Type -AssemblyName PresentationCore
+                    $stream = [IO.File]::OpenRead($file)
+                    try {
+                        $decoder = [Windows.Media.Imaging.BitmapDecoder]::Create($stream, 'PreservePixelFormat', 'OnLoad')
+                        $frame = $decoder.Frames[0]; $w = $frame.PixelWidth; $h = $frame.PixelHeight
+                        if ([bool]$a[2]) {
+                            $png = Join-Path $dir 'converted.png'
+                            $encoder = [Windows.Media.Imaging.PngBitmapEncoder]::new(); $encoder.Frames.Add($frame)
+                            $dest = [IO.File]::Open($png, 'CreateNew')
+                            try { $encoder.Save($dest) } finally { $dest.Dispose() }
+                        }
+                    } finally { $stream.Dispose() }
+                    if ([bool]$a[2]) { [IO.File]::Delete($file); $file = $png }
+                }
+                @{file=$file.Replace('\','/'); bytes=$bytes; w=$w; h=$h} | ConvertTo-Json -Compress
+            } catch { RemoveTemp $dir; throw }
+        }
         'size' { (Get-Item -LiteralPath $a[0] -Force).Length }
         'mkdir' { [void][IO.Directory]::CreateDirectory((Full $a[0])) }
         'temp' {

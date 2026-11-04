@@ -215,6 +215,12 @@ export default class Files extends View {
     this.transfers = new TransferQueue(T, cx => this.refresh(cx));
     // ⌘V pastes into the selected row's folder: the panel takes the keyboard when clicked.
     this.keys = cx.focus_handle();
+    if (props()?.viewer) {
+      const info = props().viewer;
+      this.context = key(); this.root = info.root; this.projectRoot = info.projectRoot || info.root; this.on = info.on;
+      this.show(info.file.slice(this.root.length + 1), cx);
+      return; // Image tabs do not browse folders, watch them, or poll Git/transfers.
+    }
     exec("sh", ["-c", 'mkdir -p "$1" && find "$1" -mindepth 1 -mmin +60 -delete', "clean", `${appHome()}/${PREVIEW_DIR}`]).catch(() => {});
     this.selected = null; // { path, dir } inside the shown folder
     cx.spawn(async cx => {
@@ -226,7 +232,6 @@ export default class Files extends View {
     this.treeStates = new Map();
     this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {};
     this.refresh(cx);
-    if (props()?.viewer) this.show(props().viewer.file.slice(this.root.length + 1), cx);
     cx.timer.every(10000, cx => this.refresh(cx));
   }
 
@@ -369,6 +374,15 @@ export default class Files extends View {
     cx.spawn(async cx => {
       let file = null;
       try {
+        if (!on && isWindows()) {
+          const prepared = await windows("prepare-image", [src, MAX_IMAGE, CONVERT.test(path)]);
+          if (prepared.code !== 0) throw new Error(prepared.stderr || T().imageFailed);
+          const result = JSON.parse(prepared.stdout);
+          file = result.file;
+          if (this.closed || this.file !== path || key() !== context) { await exec("rm", ["-rf", parentOf(file)]); return; }
+          this.img = { rel: file.slice(appHome().length + 1), abs: file, local: src, w: result.w, h: result.h, bytes: result.bytes };
+          return;
+        }
         const staged = await this.stage(src, on), dir = parentOf(staged.file), bytes = staged.bytes;
         file = `${dir}/${id}.${ext}`;
         await exec("mv", [staged.file, file]);
@@ -385,12 +399,12 @@ export default class Files extends View {
           w = Number(d.stdout.match(/pixelWidth:\s*(\d+)/)?.[1]) || null;
           h = Number(d.stdout.match(/pixelHeight:\s*(\d+)/)?.[1]) || null;
         }
-        if (this.file !== path || key() !== context) { await exec("rm", ["-rf", parentOf(file)]); return; }
+        if (this.closed || this.file !== path || key() !== context) { await exec("rm", ["-rf", parentOf(file)]); return; }
         this.img = { rel: file.slice(appHome().length + 1), abs: file, local: on ? null : src, w, h, bytes };
       } catch (e) {
         if (file) exec("rm", ["-rf", parentOf(file)]).catch(() => {});
         if (this.file === path && key() === context) this.fileError = String(e.message ?? e);
-      } finally { cx.notify(); }
+      } finally { if (!this.closed) cx.notify(); }
     });
   }
 
@@ -664,7 +678,7 @@ export default class Files extends View {
     });
   }
 
-  close() { this.document?.close(); }
+  close() { this.closed = true; this.document?.close(); if (this.img) exec("rm", ["-rf", parentOf(this.img.abs)]).catch(() => {}); }
 
   rows(prefix, depth, out, t, dark) {
     if (out.length >= TOTAL || depth > 40) return out;
@@ -717,7 +731,7 @@ export default class Files extends View {
       .on_click((_e, cx) => { cx.stop_propagation(); if (enabled) this.toolbar(action, cx); }).child(label);
     return v_flex().id("files").track_focus(this.keys).size_full().min_h(0)
       .on_key_down((e, cx) => {
-        if (e.keystroke === (isWindows() ? "ctrl-v" : "cmd-v")) { cx.stop_propagation(); this.pasteKey(cx); }
+        if (!props()?.viewer && e.keystroke === (isWindows() ? "ctrl-v" : "cmd-v")) { cx.stop_propagation(); this.pasteKey(cx); }
         else if (e.keystroke === "escape" && this.selected) { cx.stop_propagation(); this.selected = null; cx.notify(); }
       })
       // Sizes arrive in window points; element sizes are given at zoom 1.
@@ -727,7 +741,7 @@ export default class Files extends View {
       })
       .rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
-        .when(Boolean(this.file), el => el.child(div().id("files-back").w(20).cursor_pointer().text_color(t.muted).on_click((_e, cx) => { this.show(null); cx.notify(); }).child("←")))
+        .when(Boolean(this.file) && !props()?.viewer, el => el.child(div().id("files-back").w(20).cursor_pointer().text_color(t.muted).on_click((_e, cx) => { this.show(null); cx.notify(); }).child("←")))
         .child(h_flex().flex_1().min_w(0).gap(6).items_center().text_size(12).text_color(t.dim)
           .when(Boolean(this.file), el => el.child(image(icon(this.file, false, false, dark)).size(14).flex_none()))
           .child(div().min_w(0).truncate().child(this.file ? relativePath(`${this.root}/${this.file}`, this.projectRoot || this.root, !this.on && isWindows()) : (this.root ? this.root.replaceAll("\\", "/").replace(/\/$/, "").split("/").pop() || "/" : "")))
