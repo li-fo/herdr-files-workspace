@@ -4,6 +4,11 @@ Installed mod: `C:\Users\pgh\.config\herdr-app\mods\files-workspace`
 
 Active layout: `files-workspace`, cloned from `main`. The original layout is preserved.
 
+The custom layout uses a translucent selection color (`#6699cc55`). Herdr's
+native text-selection layer draws above glyphs; transparency keeps selected
+Markdown readable in light and dark themes. This also affects other selection
+highlights in this layout. Other theme colors are preserved.
+
 Install/update on Windows with `powershell -NoProfile -File .\install-windows.ps1`.
 It backs up the installed mod and keys, checks the mod, and merges scoped Save
 shortcuts. Conflicting shortcuts are reported before changes. It preserves the

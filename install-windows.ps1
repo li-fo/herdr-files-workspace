@@ -46,5 +46,9 @@ if (Test-Path -LiteralPath $layoutPath) {
         foreach ($child in $node.children) { Update-FileHeader $child }
     }
     Update-FileHeader $layout
+    # Native TextView paints selection above glyphs. Keep it translucent in
+    # both light and dark themes without replacing other semantic colors.
+    if (!$layout.colors) { $layout | Add-Member -NotePropertyName colors -NotePropertyValue ([pscustomobject]@{}) }
+    $layout.colors | Add-Member -NotePropertyName selection -NotePropertyValue '#6699cc55' -Force
     [IO.File]::WriteAllText($layoutPath, ($layout | ConvertTo-Json -Depth 50), [Text.UTF8Encoding]::new($false))
 }
