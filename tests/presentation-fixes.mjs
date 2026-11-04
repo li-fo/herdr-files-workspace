@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const load=(file,exports,context={})=>vm.runInNewContext(fs.readFileSync(file,'utf8').replace(/^import .*;$/gm,'').replaceAll('export ','')+'\n({'+exports+'})',context);
+const {relativePath}=load('mods/files-workspace/paths.js','relativePath');
+assert.equal(relativePath('/repo/docs/a.md','/repo'),'docs/a.md');
+assert.equal(relativePath('F:\\Repo\\docs\\a.md','f:/repo',true),'docs/a.md');
+assert.equal(relativePath('/repo','/repo'),'.');
+assert.equal(relativePath('/other/a','/repo'),'../other/a');
+assert.equal(relativePath('G:/a','F:/repo',true),'G:/a');
+assert.equal(fs.readFileSync('mods/files-workspace/paths.js','utf8').replaceAll('\r',''),fs.readFileSync('mods/files-workspace-header/paths.js','utf8').replaceAll('\r',''));
+const {addGitMark,gitMark}=load('mods/files-workspace/git-marks.js','addGitMark,gitMark');
+const marks={};addGitMark(marks,'/repo/docs/new.md','A','/repo');
+assert.equal(gitMark(marks,'/repo/docs'),'A');assert.equal(gitMark(marks,'/repo/docs/clean.md'),null);
+addGitMark(marks,'/repo/docs/edit.md','M','/repo');assert.equal(gitMark(marks,'/repo/docs'),'M');
+addGitMark(marks,'/repo/newdir/','A','/repo');assert.equal(gitMark(marks,'/repo/newdir/nested/a.md'),'A');
+assert(!marks['/']);
+console.log('PASS relative paths, ancestor Git status and new-directory descendants');
