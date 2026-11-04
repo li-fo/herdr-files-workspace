@@ -6,7 +6,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { panes, props, run, theme, home, shared } from "herdr";
+import { panes, props, run, theme, home, shared, setShared } from "herdr";
 
 function icon(p, size, color) {
   if (!p?.icon) return null;
@@ -40,11 +40,23 @@ export default class Pane extends View {
       .child(svg(`mods/pane/${icon}.svg`).size(14));
   }
 
+  editorButton(t, file, state, action, label) {
+    return div().id(`editor-${action}`).flex_none().px(7).py(3).rounded(4)
+      .text_color(t.foreground).cursor_pointer().hover(s => s.bg(t.hover))
+      .on_click((_e, cx) => {
+        cx.stop_propagation();
+        if (state.loading || state.saving) return;
+        setShared("files-transfer.editor-action:" + file.key, { token: state.token, action, id: `${Date.now()}-${Math.random()}` });
+        run("files-transfer.header");
+      }).child(label);
+  }
+
   render(cx) {
     const t = theme();
     const p = this.me();
     if (!p) return div();
     const file = p.mod === "files-transfer" ? Object.values(shared("files-transfer.file-tabs") || {}).find(item => item.tab === p.tab) : null;
+    const editor = file ? shared("files-transfer.editor:" + file.key) : null;
     const name = ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
     const pic = icon(p.program, 14, t.dim);
     const st = p.status;
@@ -64,6 +76,10 @@ export default class Pane extends View {
       .when(Boolean(pic), (el) => el.child(pic))
       .when(!file, el => el.child(div().flex_none().truncate().max_w(260).font_medium().text_color(t.foreground).child(name)))
       .child(div().flex_1().truncate().text_color(t.dim).child(file ? (file.on ? file.on + ":" : "") + file.file : folder(p.cwd)))
+      .when(Boolean(editor), el => el
+        .child(div().flex_none().text_color(t.dim).child(editor.saving ? "Saving…" : editor.dirty ? "Modified" : ""))
+        .when(editor.ready, el => el.child(this.editorButton(t, file, editor, "save", "Save")))
+        .child(this.editorButton(t, file, editor, "reload", editor.discard ? "Discard & reload" : "Reload")))
       .when(st === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
       .when(st === "blocked", el => el.child(div().flex_none().px(6).h(18).flex().items_center().rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).child("Needs you")))
       .when(st === "done", el => el.child(div().size(7).flex_none().rounded(4).bg(t.done)))

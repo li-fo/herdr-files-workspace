@@ -1,0 +1,15 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const values=new Map();let writes=0;
+const source=fs.readFileSync('mods/files-transfer/document.js','utf8').replace(/^import .*;$/gm,'').replace('export function','function').replace('export default class','class');
+const Document=vm.runInNewContext(source+'\nDocument',{shared:k=>values.get(k),setShared:(k,v)=>{values.set(k,v);writes++;}});
+const doc=new Document();Object.assign(doc,{info:{key:'file-a'},headerToken:'instance-a',buffer:{dirty:true}});
+doc.publishHeader();const count=writes;doc.publishHeader();assert.equal(writes,count);
+assert.equal(values.get('files-transfer.editor:file-a').dirty,true);
+let saves=0,reloads=0;doc.save=()=>saves++;doc.reload=()=>reloads++;
+values.set('files-transfer.editor-action:file-a',{token:'other-instance',action:'save',id:1});doc.takeHeader({});assert.equal(saves,0);
+values.set('files-transfer.editor-action:file-a',{token:'instance-a',action:'save',id:2});doc.takeHeader({});doc.takeHeader({});assert.equal(saves,1);
+values.set('files-transfer.editor-action:file-a',{token:'instance-a',action:'reload',id:3});doc.takeHeader({});assert.equal(reloads,1);
+doc.discardArmed=true;doc.publishHeader();assert.equal(values.get('files-transfer.editor:file-a').discard,true);
+console.log('PASS targeted header actions, stale-instance rejection, reload confirmation state and deduplicated status updates');
