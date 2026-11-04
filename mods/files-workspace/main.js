@@ -181,7 +181,9 @@ const parentOf = path => {
 };
 
 // A menu row is [action, label, icon]; null draws a divider.
-const MENU = (target, t = T()) => target.root
+const MENU = (target, t = T()) => target.newOnly
+  ? [["new-file", t.newFile, "file-plus.svg"], ["new-folder", t.newFolder, "folder-plus.svg"]]
+  : target.root
   ? [["paste", t.pasteHere, "paste.svg"], ["copy", t.copyPath, "copy.svg"], null,
      ["new-file", t.newFile, "file-plus.svg"], ["new-folder", t.newFolder, "folder-plus.svg"]]
   : [
@@ -819,6 +821,23 @@ export default class Files extends View {
     return out;
   }
 
+  toolbar(action, cx) {
+    if (!this.root) return;
+    if (action === "reload") { this.refresh(cx); return; }
+    const selected = this.selected;
+    const target = { path: selected ? `${this.root}/${selected.path}` : this.root,
+      name: selected ? selected.path.split("/").pop() : "", dir: selected ? selected.dir : true,
+      on: this.on ?? null, from: this.me };
+    if (action === "new") {
+      target.newOnly = true;
+      openOverlay({ mod: "files-workspace", kind: "popup", width: 220,
+        height: menuHeight(MENU(target)), props: { menu: target } });
+    } else if (action === "delete" && selected) {
+      setShared(REQUEST, { ...target, action: target.on ? "delete" : "trash", id: `${Date.now()}-${Math.random()}` });
+      this.take(cx);
+    }
+  }
+
   render(cx) {
     if (this.document) return this.document.render(cx);
     if (props()?.menu) return this.menu(theme());
@@ -827,6 +846,10 @@ export default class Files extends View {
     this.take(cx);
     if (key() !== this.context) this.refresh(cx);
     const t = theme(), dark = Boolean(settings().dark);
+    const tool = (action, label, enabled) => div().id(`files-tool-${action}`).flex_none().px(5).py(3).rounded(4)
+      .text_size(11).text_color(enabled ? t.foreground : t.dim)
+      .when(enabled, el => el.cursor_pointer().hover(s => s.bg(t.hover)))
+      .on_click((_e, cx) => { cx.stop_propagation(); if (enabled) this.toolbar(action, cx); }).child(label);
     return v_flex().id("files").track_focus(this.keys).size_full().min_h(0)
       .on_key_down((e, cx) => {
         if (e.keystroke === (isWindows() ? "ctrl-v" : "cmd-v")) { cx.stop_propagation(); this.pasteKey(cx); }
@@ -840,14 +863,17 @@ export default class Files extends View {
       .rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
         .when(Boolean(this.file), el => el.child(div().id("files-back").w(20).cursor_pointer().text_color(t.muted).on_click((_e, cx) => { this.show(null); cx.notify(); }).child("←")))
-        .child(div().font_semibold().child("Files"))
-        .child(h_flex().flex_1().min_w(0).gap(6).justify_end().items_center().text_size(12).text_color(t.dim)
+        .child(h_flex().flex_1().min_w(0).gap(6).items_center().text_size(12).text_color(t.dim)
           .when(Boolean(this.file), el => el.child(image(icon(this.file, false, false, dark)).size(14).flex_none()))
-          .child(div().min_w(0).truncate().child(this.file ?? this.root?.split(/[\\/]/).pop() ?? ""))
+          .child(div().min_w(0).truncate().child((this.on ? this.on + ":" : "") + (this.file ? `${this.root}/${this.file}` : this.root || "")))
           .when(this.md !== null && Boolean(this.file), el => el.child(div().id("files-md-toggle").flex_none().px(8).py(2).ml(4).rounded(6).border_1().border_color(t.border)
             .cursor_pointer().text_color(t.muted).hover(s => s.bg(t.hover).text_color(t.foreground))
             .on_click((_e, cx) => { this.source = !this.source; cx.notify(); })
-            .child(this.source ? T().preview : T().source)))))
+            .child(this.source ? T().preview : T().source))))
+        .when(!this.file, el => el
+          .child(tool("new", "New", Boolean(this.root)))
+          .child(tool("delete", "Delete", Boolean(this.root && this.selected)))
+          .child(tool("reload", "Reload", Boolean(this.root) && !this.loading))))
       .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6)
         .on_mouse_down("left", (_e, cx) => { this.selected = null; this.keys.focus(); cx.notify(); })
         .on_mouse_down("right", () => this.root && this.openMenu("", true))
