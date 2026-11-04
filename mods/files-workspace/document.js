@@ -1,4 +1,5 @@
 import DocumentSearch from "./document-search.js";
+import { diagramView } from "./diagram-view.js";
 import { relativePath } from "./paths.js";
 import { markdownBlocks } from "./markdown-blocks.js";
 import { unlink } from "fs/promises";
@@ -144,8 +145,7 @@ export default class Document {
         if (block.kind === "markdown") return div().flex_none().text_size(14).child(TextView.markdown(`preview-text-${this.previewRevision}-${i}`, block.text).selectable(true));
         const result = block.diagram;
         if (result?.file) {
-          const scale = Math.min(1, (this.previewWidth || 900) / result.width);
-          return div().flex_none().child(image(result.file.replaceAll("\\", "/").replace(appHome().replaceAll("\\", "/") + "/", "")).w(result.width * scale).h(result.height * scale));
+          return diagramView(block, `diagram-${this.previewRevision}-${i}`, this.previewWidth || 900);
         }
         return v_flex().flex_none().gap(6).p(12).bg(t.surface)
           .child(div().text_color(t.muted).child(result?.error || this.previewError || "Rendering Mermaid…"))

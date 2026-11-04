@@ -101,6 +101,8 @@ do not update the installed copy. Restore the backed-up keys if removing editing
 
 ### Search and replace
 
+Mermaid previews have their own view controls: **+** and **−** change zoom, **100%** shows the original size, and **Fit** shows the whole diagram. Drag inside an enlarged diagram to pan. The view clips the image to its own area; normal document scrolling remains available. Zoom is limited to 400%. Leaving the diagram ends the drag. Rebuilding Preview resets each diagram to Fit.
+
 Use **Find** in the document header, or **Ctrl+F** in the editor. Use **Ctrl+H** or the **Replace** button to show replacement controls.
 Search uses literal text. **Aa** controls case sensitivity. The result list shows line numbers; **Previous** and **Next** select a result in that list. Results do not move or highlight the native editor cursor.
 

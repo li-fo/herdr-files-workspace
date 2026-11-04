@@ -1,0 +1,15 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const source = fs.readFileSync('mods/files-workspace/diagram-view.js','utf8').replace(/^import .*;$/gm,'').replaceAll('export class','class').replaceAll('export function','function');
+const Viewport = vm.runInNewContext(source+'\nDiagramViewport');
+const view = new Viewport(2400, 600);
+view.resize(800,200); assert.equal(view.scale,1/3); assert.equal(view.x,0);
+view.zoom(1); assert.equal(view.x,-800); assert.equal(view.y,-200);
+view.begin({x:100,y:100}); view.move({x:300,y:200},2); assert.equal(view.x,-700); assert.equal(view.y,-150);
+view.move({x:10000,y:10000}); assert.equal(view.x,0); assert.equal(view.y,0);
+view.zoom(100); assert.equal(view.scale,4);
+view.fit(); assert.equal(view.scale,1/3); assert.equal(view.drag,null);
+view.resize(400,200); assert.equal(view.scale,1/6);
+const small = new Viewport(100,100); small.resize(600,200); assert.equal(small.scale,1); assert.equal(small.x,250);
+console.log('PASS diagram fit, zoom bounds, center anchoring, scaled drag, pan clamping and resize');
