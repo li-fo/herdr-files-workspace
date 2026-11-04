@@ -199,8 +199,8 @@ const MENU = (target, t = T()) => target.root
       target.on ? ["delete", t.delete, "trash.svg"] : ["trash", t.moveToTrash, "trash.svg"],
     ];
 // A name typed for a new entry or a rename: one path component.
-const validName = (n) => n !== "" && n !== "." && n !== ".." && !/[\/\u0000-\u001f]/.test(n)
-  && (!isWindows() || (!/[<>:"\\|?*]/.test(n) && !/[. ]$/.test(n) && !/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(n)));
+const validName = (n, on) => n !== "" && n !== "." && n !== ".." && !/[\/\u0000-\u001f]/.test(n)
+  && (on || !isWindows() || (!/[<>:"\\|?*]/.test(n) && !/[. ]$/.test(n) && !/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(n)));
 // Run on the entry's machine. Each refuses to replace what is there (exit 17).
 const MAKE_FILE = 'set -C; [ -e "$1" ] || [ -L "$1" ] && exit 17; : > "$1"';
 const MAKE_FOLDER = '[ -e "$1" ] || [ -L "$1" ] && exit 17; mkdir -- "$1"';
@@ -711,7 +711,7 @@ export default class Files extends View {
 
   submitAsk() {
     const a = props().ask, value = this.text.trim();
-    if (!validName(value)) { this.askError = T().badName; return; }
+    if (!validName(value, a.on)) { this.askError = T().badName; return; }
     const action = { "new-file": "create-file", "new-folder": "create-folder", rename: "rename-yes" }[a.kind];
     setShared(REQUEST, { id: `${Date.now()}-${Math.random()}`, action, ...a, value });
     closeOverlay(props().overlay);
