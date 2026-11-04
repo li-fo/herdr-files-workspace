@@ -1,0 +1,17 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const src=fs.readFileSync('mods/files-transfer/main.js','utf8');
+let loc={cwd:'/repo',on:'dgx01'};
+const body=src.slice(src.indexOf('  refresh(cx) {'),src.indexOf('  toggle(path, cx) {'));
+const proto=vm.runInNewContext('class Panel {'+body+'}; Panel.prototype',{location:()=>loc,key:()=>JSON.stringify(loc)});
+const panel=Object.assign(Object.create(proto),{treeStates:new Map(),folders:new Set(),show(){},selected:null});
+const cx={spawn(){}};
+panel.refresh(cx); panel.loading=false;
+panel.folders.add('docs');panel.folders.add('docs/tmp');panel.selected={path:'docs/tmp/99_req.md',dir:false};
+panel.refresh(cx);panel.loading=false;
+assert(panel.folders.has('docs/tmp'));
+loc={cwd:'/elsewhere',on:null};panel.refresh(cx);panel.loading=false;
+loc={cwd:'/repo',on:'dgx01'};panel.refresh(cx);
+assert(panel.folders.has('docs'));assert(panel.folders.has('docs/tmp'));assert.equal(panel.selected.path,'docs/tmp/99_req.md');
+console.log('PASS expanded remote folders and selection survive refresh and context round trip');

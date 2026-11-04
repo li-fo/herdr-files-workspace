@@ -211,7 +211,7 @@ function location() {
   if (props()?.viewer) return { cwd: props().viewer.root, on: props().viewer.on };
   const space = spaces().find(s => s.active), f = focused();
   const pane = f?.pane ? panes().find(p => p.pane === f.pane) : null;
-  const fileTab = pane?.mod === "files-transfer" ? tabContext(pane.tab) : null;
+  const fileTab = tabContext(f?.tab, space?.id);
   if (fileTab) return { cwd: fileTab.root, on: fileTab.on };
   const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
   const cwd = pane?.cwd || f?.cwd || space?.folder;
@@ -275,6 +275,7 @@ export default class Files extends View {
       if (shared(LANG_KEY) !== lang) setShared(LANG_KEY, lang);
     });
     cx.timer.every(1000, cx => this.poll(cx));
+    this.treeStates = new Map();
     this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {};
     this.refresh(cx);
     if (props()?.viewer) this.show(props().viewer.file.slice(this.root.length + 1), cx);
@@ -303,8 +304,10 @@ export default class Files extends View {
     if (this.loading) return;
     const { cwd, on } = location(), context = key();
     if (context !== this.context) {
-      this.context = context; this.root = cwd; this.on = on; this.entries = new Map(); this.folders = new Set();
-      this.pending = new Set(); this.marks = {}; this.selected = null; this.show(null); this.watched = null; this.error = null; this.limited = false;
+      if (this.context) this.treeStates.set(this.context, { folders: new Set(this.folders), selected: this.selected });
+      const saved = this.treeStates.get(context);
+      this.context = context; this.root = cwd; this.on = on; this.entries = new Map(); this.folders = saved?.folders || new Set();
+      this.pending = new Set(); this.marks = {}; this.selected = saved?.selected || null; this.show(null); this.watched = null; this.error = null; this.limited = false;
     }
     if (!cwd) return;
     this.loading = true;
