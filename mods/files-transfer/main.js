@@ -187,6 +187,7 @@ const MENU = (target, t = T()) => target.root
   : [
       ["download", downloadDirectory() ? t.downloadTo(downloadDirectory()) : target.dir ? t.downloadFolder : t.download, "download.svg"],
       ["download-to", t.chooseDownload, "folder-plus.svg"],
+      ...(!target.dir && target.previewStack && (PP_MARKDOWN.test(target.path) || PP_MEDIA.test(target.path)) ? [["preview-plus", "Open in Preview Plus", "file-plus.svg"]] : []),
       ["paste", target.dir ? t.pasteInto : t.pasteBeside, "paste.svg"],
       ["copy", t.copyPath, "copy.svg"],
       ...(target.on ? [] : [["reveal", t.reveal, "finder.svg"]]),
@@ -475,6 +476,7 @@ export default class Files extends View {
     const target = path
       ? { path: `${this.root}/${path}`, name: path.split("/").pop(), dir, on: this.on ?? null, from: this.me }
       : { path: this.root, name: this.root.split("/").pop(), dir: true, root: true, on: this.on ?? null, from: this.me };
+    target.previewStack = props()?.previewStack;
     openOverlay({ mod: "files-transfer", kind: "popup", width: downloadDirectory() ? 460 : 250, height: menuHeight(MENU(target)), props: { menu: target } });
   }
 
@@ -485,6 +487,7 @@ export default class Files extends View {
     this.lastRequest = req.id;
     setShared(REQUEST, null);
     const { action, path, name, dir, on } = req;
+    if (action === "preview-plus") { this.handoff(path.slice(this.root.length + 1), cx); return; }
     if (action === "delete") {
       openOverlay({ mod: "files-transfer", kind: "dialog", width: 420, height: 176, props: { confirm: { path, name, dir, on, from: this.me } } });
       return;
@@ -766,6 +769,10 @@ export default class Files extends View {
   }
 
   openTab(path, cx) {
+    if (/\.pdf$/i.test(path)) {
+      if (!this.handoff(path, cx)) notify({ title: "PDF preview unavailable", body: "Configure Preview Plus, or download the PDF and open it in your PDF viewer.", level: "info" });
+      return;
+    }
     const space = spaces().find(s => s.active)?.id;
     if (!space) return;
     const info = { space, root: this.root, on: this.on || null, file: `${this.root}/${path}` };
