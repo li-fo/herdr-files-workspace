@@ -24,9 +24,7 @@ export default class DocumentSearch {
   }
   move(step, cx) { const n = this.results().found.length; this.index = n ? (this.index + step + n) % n : 0; if (n) this.scroll?.scroll_to_item(this.index, "center"); cx.notify(); }
   apply(text, cx) {
-    this.doc.editor.set_value(text);
-    this.doc.buffer.text = text; this.doc.draftPending = true; this.doc.discardArmed = false;
-    this.doc.note = null; this.doc.updateTitle(); cx.notify();
+    this.doc.applyTextChange(text, cx);
   }
   replace(all, cx) {
     if (this.doc.saving || this.doc.loading) return;

@@ -14,7 +14,7 @@ assert.equal(replaceMatches('aaa', matches('aaa','aa'), 'b'), 'ba');
 const read = name => fs.readFileSync(`mods/files-workspace/${name}.js`, 'utf8').replace(/^import .*;$/gm, '').replaceAll('export default class', 'class').replaceAll('export async function', 'async function').replaceAll('export const', 'const');
 const DocSearch = vm.runInNewContext(read('document-search')+'\nDocumentSearch', {matches,replaceMatches});
 let current = 'alpha alpha', changed = 0;
-const doc = {editor:{value:()=>current,set_value:x=>current=x},buffer:{text:current},updateTitle:()=>changed++};
+const doc = {editor:{value:()=>current},buffer:{text:current},applyTextChange(text){current=text;this.buffer.text=text;this.draftPending=true;changed++;}};
 const search = new DocSearch(doc); search.query={value:()=> 'alpha'}; search.replacement={value:()=> 'beta'};
 search.replace(false,{notify(){}}); assert.equal(current,'beta alpha'); assert.equal(doc.buffer.text,current); assert(doc.draftPending); assert.equal(changed,1);
 search.replace(true,{notify(){}}); assert.equal(current,'beta beta'); assert.equal(search.undo.before,'beta alpha');

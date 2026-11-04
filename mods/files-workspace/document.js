@@ -61,8 +61,7 @@ export default class Document {
         if (this.previewMode) this.preparePreview(cx);
         this.note = restored.note; this.error = loadError || null;
         editor.on("change", (_event, cx) => {
-          this.buffer.text = editor.value(); this.discardArmed = false; this.draftPending = true;
-          this.note = null; this.updateTitle(); cx.notify();
+          this.applyTextChange(editor.value(), cx, false);
         });
         if (this.discardArmed) persistDraft(this.info.key, buffer, this.version);
         this.discardArmed = false;
@@ -79,6 +78,13 @@ export default class Document {
       this.headerState = encoded;
       setShared("files-workspace.editor:" + this.info.key, state);
     }
+  }
+  applyTextChange(text, cx, updateEditor = true) {
+    if (this.closed || !this.buffer || !this.editor) return;
+    if (updateEditor && this.editor.value() !== text) this.editor.set_value(text);
+    this.buffer.text = text;
+    this.discardArmed = false; this.draftPending = true; this.note = null;
+    this.updateTitle(); cx.notify();
   }
   takeHeader(cx) {
     const key = "files-workspace.editor-action:" + this.info.key;

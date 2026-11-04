@@ -29,3 +29,11 @@ const keyCx = { stop_propagation(){ stopped++; } };
 for (const keystroke of ['ctrl-f','ctrl-h','cmd-f','cmd-alt-f','f','ctrl-s','ctrl-shift-f']) keyDoc.searchKeyUp({keystroke}, keyCx);
 assert.deepEqual(requests, [false,true,false,true]); assert.equal(stopped,4);
 console.log('PASS search key-up routing and unrelated key preservation');
+
+let content='before', editorWrites=0, notifications=0;
+const editDoc=new Document(); Object.assign(editDoc,{buffer:{text:content},discardArmed:true,note:'restored',editor:{value:()=>content,set_value(value){content=value;editorWrites++;}},updateTitle(){}});
+const editCx={notify(){notifications++;}};
+editDoc.applyTextChange('replacement',editCx); assert.equal(editDoc.buffer.text,'replacement'); assert.equal(editorWrites,1); assert(editDoc.draftPending); assert.equal(editDoc.note,null); assert.equal(editDoc.discardArmed,false);
+content='typed'; editDoc.applyTextChange(content,editCx,false); assert.equal(editorWrites,1); assert.equal(editDoc.buffer.text,'typed');
+editDoc.closed=true; editDoc.applyTextChange('late',editCx); assert.equal(content,'typed'); assert.equal(notifications,2);
+console.log('PASS unified typed/replaced text updates and closed-document guard');
