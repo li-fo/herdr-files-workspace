@@ -1,11 +1,9 @@
 import DocumentSearch from "./document-search.js";
-import { diagramView } from "./diagram-view.js";
+import MarkdownPreview from "./markdown-preview.js";
 import { relativePath } from "./paths.js";
-import { markdownBlocks } from "./markdown-blocks.js";
-import { unlink } from "fs/promises";
-import { div, image } from "gpui-kit";
-import { v_flex, h_flex, Editor, EditorState, TextView } from "gpui-base";
-import { theme, settings, nextCommand, shared, run, focused, layout, setShared, exec, appHome, writeTextFile } from "herdr";
+import { div } from "gpui-kit";
+import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
+import { theme, settings, nextCommand, shared, run, focused, layout, setShared } from "herdr";
 import { TextBuffer } from "./text-buffer.js";
 import { TAB_KEY } from "./file-tabs.js";
 import { loadText, saveText } from "./remote-text.js";
@@ -22,7 +20,7 @@ export default class Document {
     this.keys = cx.focus_handle();
     this.info = info;
     this.markdown = /\.(md|markdown|mdown|mkd)$/i.test(info.file);
-    this.previewMode = false; this.previewFiles = []; this.previewRevision = 0;
+    this.previewMode = false; this.closed = false;
     this.headerToken = `${Date.now()}-${Math.random()}`;
     this.error = null;
     this.saving = false;
@@ -40,7 +38,7 @@ export default class Document {
     });
   }
   load(cx) {
-    if (this.loading || this.saving) return;
+    if (this.closed || this.loading || this.saving) return;
     this.loading = true;
     this.error = null;
     this.publishHeader();
@@ -49,6 +47,7 @@ export default class Document {
         let loaded, loadError;
         try { loaded = await loadText(this.info); }
         catch (error) { if (!readDraft(this.info.key) || this.discardArmed) throw error; loadError = String(error.message || error); }
+        if (this.closed) return;
         const restored = this.discardArmed
           ? { buffer: new TextBuffer(loaded.text), version: loaded.version, note: null }
           : restoreDraft(this.info.key, loaded);
@@ -67,11 +66,12 @@ export default class Document {
         this.discardArmed = false;
         this.updateTitle();
       } catch (error) { this.error = String(error.message || error); }
-      finally { this.loading = false; this.publishHeader(); }
-      cx.notify();
+      finally { this.loading = false; if (!this.closed) this.publishHeader(); }
+      if (!this.closed) cx.notify();
     });
   }
   publishHeader() {
+    if (this.closed) return;
     const state = { markdown: Boolean(this.markdown), preview: Boolean(this.previewMode), token: this.headerToken, ready: Boolean(this.buffer), dirty: Boolean(this.buffer?.dirty), saving: Boolean(this.saving), loading: Boolean(this.loading), discard: Boolean(this.discardArmed) };
     const encoded = JSON.stringify(state);
     if (encoded !== this.headerState) {
@@ -117,47 +117,10 @@ export default class Document {
     this.publishHeader(); cx.notify();
   }
   preparePreview(cx) {
-    const revision = ++this.previewRevision;
-    this.previewBlocks = markdownBlocks(this.buffer.text);
-    const diagrams = this.previewBlocks.filter(block => block.kind === "mermaid");
-    this.previewError = null;
-    this.previewBusy = diagrams.length > 0;
-    if (!diagrams.length) return;
-    const t = theme();
-    const colors = { "--pele-bg": t.background, "--pele-fg": t.foreground, "--pele-muted": t.muted,
-      "--pele-line": t.foreground, "--pele-surface": t.surface, "--pele-surface-alt": t.raised,
-      "--pele-border": t.border, "--pele-accent": t.accent };
-    cx.spawn(async cx => {
-      const dir = `${appHome()}/data/files-workspace/markdown/${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const request = dir + "/request.json";
-      try {
-        await writeTextFile(request, JSON.stringify({ diagrams: diagrams.map(block => block.text), colors }), null);
-        this.previewFiles.push(request);
-        const result = await exec("node", [appHome() + "/mods/files-workspace/render-diagrams.mjs", request]);
-        if (result.code !== 0) throw new Error(result.stderr || "Diagram rendering failed. Node.js is required.");
-        const rendered = JSON.parse(result.stdout);
-        for (const item of rendered) if (item.file) this.previewFiles.push(item.file);
-        if (revision !== this.previewRevision) return;
-        rendered.forEach((item, i) => { diagrams[i].diagram = item; });
-      } catch (error) { if (revision === this.previewRevision) this.previewError = String(error.message || error); }
-      finally { if (revision === this.previewRevision) this.previewBusy = false; cx.notify(); }
-    });
+    this.preview ||= new MarkdownPreview();
+    this.preview.prepare(this.buffer.text, cx);
   }
-  renderPreview() {
-    const t = theme();
-    return v_flex().id("markdown-preview").flex_1().min_h(0).overflow_y_scrollbar().p(18).gap(12)
-      .on_size_change((size, cx) => { const width = Math.max(100, size.width / (settings().zoom || 1) - 36); if (width !== this.previewWidth) { this.previewWidth = width; cx.notify(); } })
-      .children((this.previewBlocks || []).map((block, i) => {
-        if (block.kind === "markdown") return div().flex_none().text_size(14).child(TextView.markdown(`preview-text-${this.previewRevision}-${i}`, block.text).selectable(true));
-        const result = block.diagram;
-        if (result?.file) {
-          return diagramView(block, `diagram-${this.previewRevision}-${i}`, this.previewWidth || 900);
-        }
-        return v_flex().flex_none().gap(6).p(12).bg(t.surface)
-          .child(div().text_color(t.muted).child(result?.error || this.previewError || "Rendering Mermaid…"))
-          .when(Boolean(result?.error || this.previewError), el => el.child(TextView.markdown(`diagram-error-${i}`, "```text\n" + block.text + "\n```")));
-      }));
-  }
+  renderPreview() { return this.preview?.render() || div(); }
   updateTitle() {
     this.publishHeader();
     const tab = (shared(TAB_KEY) || {})[this.info.key]?.tab;
@@ -166,7 +129,7 @@ export default class Document {
     if (title !== this.title) { this.title = title; run("tab.rename", { id: tab, name: title }); }
   }
   save(cx) {
-    if (!this.buffer?.dirty || this.saving || this.loading) return;
+    if (this.closed || !this.buffer?.dirty || this.saving || this.loading) return;
     this.saving = true; this.error = null; this.publishHeader(); cx.notify();
     cx.spawn(async cx => {
       try {
@@ -175,7 +138,7 @@ export default class Document {
         this.buffer.saved(snapshot); this.discardArmed = false;
         this.note = null; this.draftPending = true; this.flushDraft();
       } catch (error) { this.error = String(error.message || error); }
-      finally { this.saving = false; this.updateTitle(); cx.notify(); }
+      finally { this.saving = false; if (!this.closed) { this.updateTitle(); cx.notify(); } }
     });
   }
   reload(cx) {
@@ -186,8 +149,8 @@ export default class Document {
     if (!this.buffer || !this.draftPending) return;
     persistDraft(this.info.key, this.buffer, this.version); this.draftPending = false;
   }
-  close() { this.flushDraft(); this.search?.close(); this.editor?.release();
-    for (const file of this.previewFiles || []) unlink(file).catch(() => {});
+  close() { this.closed = true; this.flushDraft(); this.search?.close(); this.editor?.release();
+    this.preview?.close();
     const key = "files-workspace.editor:" + this.info.key;
     if (shared(key)?.token === this.headerToken) setShared(key, null);
   }
