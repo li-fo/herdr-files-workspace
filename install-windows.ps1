@@ -24,7 +24,7 @@ Copy-Item -LiteralPath (Join-Path $source 'main.js') -Destination $destination -
 [IO.File]::WriteAllText($keysPath, ($keys | ConvertTo-Json -Depth 50), [Text.UTF8Encoding]::new($false))
 herdr-app check $destination | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "Installed mod check failed. Backup: $backup" }
-Write-Output "Installed. Backup: $backup"
+Write-Output "Herdr Files Workspace installed. Backup: $backup"
 Write-Output 'Keep your existing custom layout. For first installation, clone main and point its Files block at files-transfer (see WINDOWS.md).'
 
 # Optional companion header for the custom Windows layout only.

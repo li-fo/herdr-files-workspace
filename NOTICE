@@ -1,3 +1,11 @@
+Herdr Files Workspace
+
+Modified from Files Transfer for Herdr
+(https://github.com/vladimiryakimenko/herdr-files-transfer).
+Workspace changes: Windows integration, remembered download destination,
+Space-tab editing, remote saves, recovery drafts and custom pane headers.
+The original upstream notice follows.
+
 Files Transfer for Herdr
 
 This product is a modified version of File Icons for Herdr
