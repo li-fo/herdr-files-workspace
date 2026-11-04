@@ -10,19 +10,19 @@ export function tabContext(tab, space) {
   return Object.values(shared(TAB_KEY) || {}).find(entry => entry.tab === tab)
     || (space ? (shared(OPENING_KEY) || {})[space] : null);
 }
-export async function openFile({ space, on, root, file }) {
+export async function openFile({ space, on, root, file, projectRoot }) {
   const key = fileKey(space, on, file);
   const existing = (shared(TAB_KEY) || {})[key];
   if (existing && panes().some(p => p.tab === existing.tab)) {
     // Reusing a tab must not restore the folder from its first opening.
-    setShared(TAB_KEY, { ...(shared(TAB_KEY) || {}), [key]: { ...existing, root, on: on || null } });
+    setShared(TAB_KEY, { ...(shared(TAB_KEY) || {}), [key]: { ...existing, root, projectRoot: projectRoot || root, on: on || null } });
     run("tab.select", { id: existing.tab }); return;
   }
   if (opening.has(key)) return;
   opening.add(key);
   try {
     const name = file.split(/[\\/]/).pop();
-    const info = { key, file, root, on: on || null, space };
+    const info = { key, file, root, projectRoot: projectRoot || root, on: on || null, space };
     setShared(OPENING_KEY, { ...(shared(OPENING_KEY) || {}), [space]: info });
     const media = /\.(png|jpe?g|gif|webp|bmp|svg|ico|tiff?|heic|heif|avif)$/i.test(file);
     const result = await exec("herdr-app", ["do", "tab.new", "--space", space, "--name", name,

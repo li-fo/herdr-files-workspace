@@ -1,3 +1,4 @@
+import { relativePath } from "./paths.js";
 import { markdownBlocks } from "./markdown-blocks.js";
 import { unlink } from "fs/promises";
 import { div, image } from "gpui-kit";
@@ -174,7 +175,7 @@ export default class Document {
     return v_flex().size_full().min_h(0).bg(t.background).text_color(t.foreground)
       .on_key_down((e, cx) => { if (e.keystroke === "ctrl-s" || e.keystroke === "cmd-s") { cx.stop_propagation(); this.save(cx); } })
       .when(!pathInHeader, el => el.child(h_flex().h(36).flex_none().px(12).gap(8).items_center().border_b(1).border_color(t.border).text_size(12)
-        .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(pathInHeader ? "" : (this.info.on ? this.info.on + ":" : "") + this.info.file))
+        .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(pathInHeader ? "" : relativePath(this.info.file, this.info.projectRoot || this.info.root, !this.info.on)))
         .child(div().text_color(t.dim).child(this.saving ? "Saving…" : this.buffer?.dirty ? "Modified" : ""))
         .when(Boolean(this.buffer), el => el.child(button("file-save", "Save", cx => this.save(cx))))
         .when(this.markdown && Boolean(this.buffer), el => el.child(button("file-preview", this.previewMode ? "Source" : "Preview", cx => this.togglePreview(cx))))

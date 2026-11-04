@@ -1,3 +1,4 @@
+import { relativePath } from "./paths.js";
 // A pane's header, for layouts that frame their panes:
 //   { "tab": "active", "pane": { "header": { "content": { "mod": "pane" } } } }
 // Shows the program's icon (the app's program table), the agent's name or
@@ -72,7 +73,7 @@ export default class Pane extends View {
       .on_click(() => run("pane.focus", { pane }))
       .when(Boolean(pic), (el) => el.child(pic))
       .when(!file, el => el.child(div().flex_none().truncate().max_w(260).font_medium().text_color(t.foreground).child(name)))
-      .child(div().flex_1().truncate().text_color(t.dim).child(file ? (file.on ? file.on + ":" : "") + file.file : folder(p.cwd)))
+      .child(div().flex_1().truncate().text_color(t.dim).child(file ? relativePath(file.file, file.projectRoot || file.root, !file.on) : folder(p.cwd)))
       .when(Boolean(editor), el => el
         .child(div().flex_none().text_color(t.dim).child(editor.saving ? "Saving…" : editor.dirty ? "Modified" : ""))
         .when(editor.ready && editor.markdown, el => el.child(this.editorButton(t, file, editor, "preview", editor.preview ? "Source" : "Preview")))

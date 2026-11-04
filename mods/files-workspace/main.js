@@ -1,3 +1,4 @@
+import { relativePath } from "./paths.js";
 // Files Transfer: Herdr's Files panel with VS Code's Material Icon Theme icons and file transfer.
 // A lazy file browser for the focused pane's folder, with bounded read-only previews, and a
 // right-click menu that downloads, uploads (paste from Finder, or drop), copies paths, creates,
@@ -102,7 +103,7 @@ const STRINGS = {
     pasteHere: "Paste here", pasteInto: "Paste into this folder", pasteBeside: "Paste here",
     download: "Download to Downloads", downloadFolder: "Download folder to Downloads",
     downloadTo: (folder) => `Download to ${folder}`, chooseDownload: "Download to…",
-    copyPath: "Copy path", reveal: "Reveal in Finder", delete: "Delete…",
+    copyRelativePath: "Copy Relative Path", copyPath: "Copy path", reveal: "Reveal in Finder", delete: "Delete…",
     pathCopied: "Path copied", nothingToPaste: "Nothing to paste",
     nothingToPasteBody: "Copy a file or folder in Finder (⌘C), then choose Paste.",
     tooDangerous: (p) => `Refusing to delete ${p}`, deleted: (n) => `Deleted ${n}`,
@@ -127,7 +128,7 @@ const STRINGS = {
     pasteHere: "Вставить сюда", pasteInto: "Вставить в эту папку", pasteBeside: "Вставить рядом",
     download: "Скачать в Загрузки", downloadFolder: "Скачать папку в Загрузки",
     downloadTo: (folder) => `Скачать в ${folder}`, chooseDownload: "Скачать в…",
-    copyPath: "Скопировать путь", reveal: "Показать в Finder", delete: "Удалить…",
+    copyRelativePath: "Copy Relative Path", copyPath: "Скопировать путь", reveal: "Показать в Finder", delete: "Удалить…",
     pathCopied: "Путь скопирован", nothingToPaste: "Нечего вставить",
     nothingToPasteBody: "Скопируйте файл или папку в Finder (⌘C), потом выберите «Вставить».",
     tooDangerous: (p) => `Слишком опасный путь: ${p}`, deleted: (n) => `Удалено: ${n}`,
@@ -184,14 +185,14 @@ const parentOf = path => {
 const MENU = (target, t = T()) => target.newOnly
   ? [["new-file", t.newFile, "file-plus.svg"], ["new-folder", t.newFolder, "folder-plus.svg"]]
   : target.root
-  ? [["paste", t.pasteHere, "paste.svg"], ["copy", t.copyPath, "copy.svg"], null,
+  ? [["paste", t.pasteHere, "paste.svg"], ["copy", t.copyPath, "copy.svg"], ["copy-relative", t.copyRelativePath, "copy.svg"], null,
      ["new-file", t.newFile, "file-plus.svg"], ["new-folder", t.newFolder, "folder-plus.svg"]]
   : [
       ["download", downloadDirectory() ? t.downloadTo(downloadDirectory()) : target.dir ? t.downloadFolder : t.download, "download.svg"],
       ["download-to", t.chooseDownload, "folder-plus.svg"],
       ...(!target.dir && target.previewStack && (PP_MARKDOWN.test(target.path) || PP_MEDIA.test(target.path)) ? [["preview-plus", "Open in Preview Plus", "file-plus.svg"]] : []),
       ["paste", target.dir ? t.pasteInto : t.pasteBeside, "paste.svg"],
-      ["copy", t.copyPath, "copy.svg"],
+      ["copy", t.copyPath, "copy.svg"], ["copy-relative", t.copyRelativePath, "copy.svg"],
       ...(target.on ? [] : [["reveal", t.reveal, "finder.svg"]]),
       null,
       ["new-file", t.newFile, "file-plus.svg"],
@@ -325,7 +326,7 @@ export default class Files extends View {
     if (context !== this.context) {
       if (this.context) this.treeStates.set(this.context, { folders: new Set(this.folders), selected: this.selected });
       const saved = this.treeStates.get(context);
-      this.context = context; this.root = cwd; this.on = on; this.entries = new Map(); this.folders = saved?.folders || new Set();
+      this.context = context; this.projectRoot = null; this.root = cwd; this.on = on; this.entries = new Map(); this.folders = saved?.folders || new Set();
       this.pending = new Set(); this.marks = {}; this.selected = saved?.selected || null; this.show(null); this.watched = null; this.error = null; this.limited = false;
     }
     if (!cwd) return;
@@ -345,6 +346,7 @@ export default class Files extends View {
           }
         }
         if (key() !== context) return;
+        this.projectRoot = top?.code === 0 ? top.stdout.trim() : cwd;
         this.marks = marks; this.error = null; this.watch(cwd, cx);
       } catch (e) { if (key() === context) this.error = String(e); }
       finally { this.loading = false; cx.notify(); }
@@ -494,6 +496,7 @@ export default class Files extends View {
     const target = path
       ? { path: `${this.root}/${path}`, name: path.split("/").pop(), dir, on: this.on ?? null, from: this.me }
       : { path: this.root, name: this.root.split("/").pop(), dir: true, root: true, on: this.on ?? null, from: this.me };
+    target.relativePath = relativePath(target.path, this.projectRoot || this.root, !this.on && isWindows());
     target.previewStack = props()?.previewStack;
     openOverlay({ mod: "files-workspace", kind: "popup", width: downloadDirectory() ? 460 : 250, height: menuHeight(MENU(target)), props: { menu: target } });
   }
@@ -519,10 +522,11 @@ export default class Files extends View {
     }
     cx.spawn(async cx => {
       try {
-        if (action === "copy") {
-          const r = await exec("sh", ["-c", 'printf %s "$1" | pbcopy', "copy", path]);
+        if (action === "copy" || action === "copy-relative") {
+          const copiedPath = action === "copy-relative" ? req.relativePath : path;
+          const r = await exec("sh", ["-c", 'printf %s "$1" | pbcopy', "copy", copiedPath]);
           if (r.code !== 0) throw new Error(r.stderr || "Cannot copy the path");
-          notify({ title: T().pathCopied, body: path, level: "info", timeout: 2500 });
+          notify({ title: T().pathCopied, body: copiedPath, level: "info", timeout: 2500 });
         } else if (action === "reveal") {
           const r = await exec("open", ["-R", path]);
           if (r.code !== 0) throw new Error(r.stderr || "Cannot reveal this item");
@@ -793,7 +797,7 @@ export default class Files extends View {
     }
     const space = spaces().find(s => s.active)?.id;
     if (!space) return;
-    const info = { space, root: this.root, on: this.on || null, file: `${this.root}/${path}` };
+    const info = { space, root: this.root, projectRoot: this.projectRoot || this.root, on: this.on || null, file: `${this.root}/${path}` };
     cx.spawn(async () => {
       try { await openFile(info); }
       catch (error) { notify({ title: "Cannot open file", body: String(error.message || error), level: "error" }); }
@@ -865,7 +869,7 @@ export default class Files extends View {
         .when(Boolean(this.file), el => el.child(div().id("files-back").w(20).cursor_pointer().text_color(t.muted).on_click((_e, cx) => { this.show(null); cx.notify(); }).child("←")))
         .child(h_flex().flex_1().min_w(0).gap(6).items_center().text_size(12).text_color(t.dim)
           .when(Boolean(this.file), el => el.child(image(icon(this.file, false, false, dark)).size(14).flex_none()))
-          .child(div().min_w(0).truncate().child((this.on ? this.on + ":" : "") + (this.file ? `${this.root}/${this.file}` : this.root || "")))
+          .child(div().min_w(0).truncate().child(this.file ? relativePath(`${this.root}/${this.file}`, this.projectRoot || this.root, !this.on && isWindows()) : (this.root ? this.root.replaceAll("\\", "/").replace(/\/$/, "").split("/").pop() || "/" : "")))
           .when(this.md !== null && Boolean(this.file), el => el.child(div().id("files-md-toggle").flex_none().px(8).py(2).ml(4).rounded(6).border_1().border_color(t.border)
             .cursor_pointer().text_color(t.muted).hover(s => s.bg(t.hover).text_color(t.foreground))
             .on_click((_e, cx) => { this.source = !this.source; cx.notify(); })
