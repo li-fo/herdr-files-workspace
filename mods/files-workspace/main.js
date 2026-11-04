@@ -812,7 +812,7 @@ export default class Files extends View {
     for (const entry of this.entries.get(prefix) ?? []) {
       if (out.length >= TOTAL) break;
       const path = prefix ? `${prefix}/${entry.name}` : entry.name, open = this.folders.has(path), mark = gitMark(this.marks, `${this.root}/${path}`);
-      const markColor = mark === "A" ? t.ansi2 : mark === "D" || mark === "U" ? t.ansi1 : mark === "M" ? t.blocked : t.foreground;
+      const markColor = mark === "A" ? t.ansi2 : mark === "D" || mark === "U" ? t.ansi1 : mark === "M" ? t.ansi3 : t.foreground;
       out.push(h_flex().id(`file-${path}`).h(28).flex_none().pl(8 + depth * 18).pr(8).gap(7).items_center().rounded(7).cursor_pointer()
         .when(this.selected?.path === path, el => el.bg(t.selected)).hover(s => s.bg(t.hover))
         .on_click((_e, cx) => { this.select(path, entry.dir); entry.dir ? this.toggle(path, cx) : this.openTab(path, cx); })
