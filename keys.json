@@ -1,0 +1,6 @@
+{
+  "mod:files-transfer": {
+    "ctrl-s": "files-transfer.save",
+    "cmd-s": "files-transfer.save"
+  }
+}

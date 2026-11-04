@@ -1,0 +1,16 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const source=fs.readFileSync('mods/files-transfer/text-buffer.js','utf8').replaceAll('export ','');
+const {TextBuffer,byteLength}=vm.runInNewContext(source+'\n({TextBuffer,byteLength})');
+const raw='\ufeff# 한글\r\nhello\r\n', b=new TextBuffer(raw);
+assert.equal(b.text,'# 한글\nhello\n');assert.equal(b.dirty,false);
+b.text+='world\n';const first=b.snapshot();assert.equal(first.expected,raw);assert.equal(first.raw,'\ufeff# 한글\r\nhello\r\nworld\r\n');
+b.text+='typing during save\n';b.saved(first);assert(b.dirty);assert.equal(b.snapshot().expected,first.raw);
+b.saved(b.snapshot());assert.equal(b.dirty,false);
+assert.equal(byteLength('한글😀'),Buffer.byteLength('한글😀'));
+assert.throws(()=>new TextBuffer('a\0b'),/Binary/);
+assert.throws(()=>new TextBuffer('a\r\nb\n'),/Mixed/);
+assert.throws(()=>new TextBuffer('x'.repeat(1048577)),/1 MiB/);
+b.text='x'.repeat(1048577);assert.throws(()=>b.snapshot(),/1 MiB/);
+console.log('PASS UTF-8 size bounds, binary rejection, BOM/CRLF preservation and edits made during save');
