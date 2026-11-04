@@ -1,7 +1,7 @@
 param([string]$AppHome = "$env:USERPROFILE\.config\herdr-app")
 $ErrorActionPreference = 'Stop'
+$AppHome = [IO.Path]::GetFullPath($AppHome)
 $source = Join-Path $PSScriptRoot 'mods\files-workspace'
-$destination = Join-Path $AppHome 'mods\files-workspace'
 $keysPath = Join-Path $AppHome 'keys.json'
 if (!(Test-Path -LiteralPath $keysPath)) { throw 'Start Herdr once before installing.' }
 $keys = Get-Content -LiteralPath $keysPath -Raw | ConvertFrom-Json
@@ -11,49 +11,89 @@ foreach ($key in @('ctrl-s', 'cmd-s')) {
     if ($section.$key -and $section.$key -ne 'files-workspace.save') { throw "Existing $key binding conflicts; merge keys.json manually." }
     $section | Add-Member -NotePropertyName $key -NotePropertyValue 'files-workspace.save' -Force
 }
-herdr-app check $source | Out-Host
 foreach ($binding in @(@('ctrl-f', 'find'), @('cmd-f', 'find'), @('ctrl-h', 'replace'), @('cmd-alt-f', 'replace'))) {
     $key = $binding[0]; $command = 'files-workspace.' + $binding[1]
     if ($section.$key -and $section.$key -ne $command) { throw "Existing $key binding conflicts; merge keys.json manually." }
     $section | Add-Member -NotePropertyName $key -NotePropertyValue $command -Force
 }
-if ($LASTEXITCODE -ne 0) { throw 'Source mod check failed.' }
-$backup = Join-Path $AppHome ('backups\files-workspace-' + [Guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path $backup | Out-Null
-Copy-Item -LiteralPath $keysPath -Destination $backup
-if (Test-Path -LiteralPath $destination) { Copy-Item -LiteralPath $destination -Destination $backup -Recurse }
-New-Item -ItemType Directory -Path $destination -Force | Out-Null
-# Copy dependencies before main.js to reduce transient hot-reload failures.
-Get-ChildItem -LiteralPath $source | Where-Object Name -ne 'main.js' | Copy-Item -Destination $destination -Recurse -Force
-Copy-Item -LiteralPath (Join-Path $source 'main.js') -Destination $destination -Force
-[IO.File]::WriteAllText($keysPath, ($keys | ConvertTo-Json -Depth 50), [Text.UTF8Encoding]::new($false))
-herdr-app check $destination | Out-Host
-if ($LASTEXITCODE -ne 0) { throw "Installed mod check failed. Backup: $backup" }
-Write-Output "Herdr Files Workspace installed. Backup: $backup"
-Write-Output 'Keep your existing custom layout. For first installation, clone main and point its Files block at files-workspace (see WINDOWS.md).'
-
-# Optional companion header for the custom Windows layout only.
+# Validate both modules before changing the installed files.
 $headerSource = Join-Path $PSScriptRoot 'mods\files-workspace-header'
-$headerTarget = Join-Path $AppHome 'mods\files-workspace-header'
-herdr-app check $headerSource | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'Header check failed.' }
-if (Test-Path -LiteralPath $headerTarget) { Copy-Item -LiteralPath $headerTarget -Destination $backup -Recurse }
-New-Item -ItemType Directory -Path $headerTarget -Force | Out-Null
-Get-ChildItem -LiteralPath $headerSource | Copy-Item -Destination $headerTarget -Recurse -Force
+foreach ($modSource in @($source, $headerSource)) {
+    herdr-app check $modSource | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "Source mod check failed: $modSource" }
+}
 $layoutPath = Join-Path $AppHome 'layouts\files-workspace.json'
+$layout = $null
 if (Test-Path -LiteralPath $layoutPath) {
-    Copy-Item -LiteralPath $layoutPath -Destination $backup
     $layout = Get-Content -LiteralPath $layoutPath -Raw | ConvertFrom-Json
     function Update-FileHeader($node) {
-        if ($node.content.pane.header.content.mod -eq 'pane') {
-            $node.content.pane.header.content.mod = 'files-workspace-header'
-        }
+        if ($node.content.pane.header.content.mod -eq 'pane') { $node.content.pane.header.content.mod = 'files-workspace-header' }
         foreach ($child in $node.children) { Update-FileHeader $child }
     }
     Update-FileHeader $layout
-    # Native TextView paints selection above glyphs. Keep it translucent in
-    # both light and dark themes without replacing other semantic colors.
     if (!$layout.colors) { $layout | Add-Member -NotePropertyName colors -NotePropertyValue ([pscustomobject]@{}) }
     $layout.colors | Add-Member -NotePropertyName selection -NotePropertyValue '#6699cc55' -Force
-    [IO.File]::WriteAllText($layoutPath, ($layout | ConvertTo-Json -Depth 50), [Text.UTF8Encoding]::new($false))
 }
+
+$manifestPath = Join-Path $AppHome 'data\files-workspace\install-manifest.json'
+$oldFiles = @()
+if (Test-Path -LiteralPath $manifestPath) { $oldFiles = @((Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json).files) }
+# Only previous managed files inside these two mod folders may be removed.
+function Resolve-ManagedPath([string]$relative) {
+    if ($relative -notmatch '^mods[\\/]files-workspace(?:-header)?[\\/]' -or $relative -match '(^|[\\/])\.\.([\\/]|$)' -or [IO.Path]::IsPathRooted($relative)) { throw "Invalid managed file path: $relative" }
+    $resolved = [IO.Path]::GetFullPath((Join-Path $AppHome $relative))
+    if (!$resolved.StartsWith($AppHome.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw "Managed file escapes app home: $relative" }
+    return $resolved
+}
+$copies = @()
+foreach ($name in @('files-workspace', 'files-workspace-header')) {
+    $modSource = Join-Path $PSScriptRoot "mods\$name"
+    foreach ($file in Get-ChildItem -LiteralPath $modSource -File -Recurse) {
+        $relative = "mods\$name\" + $file.FullName.Substring($modSource.Length + 1)
+        $copies += [pscustomobject]@{ Source = $file.FullName; Relative = $relative; Target = (Resolve-ManagedPath $relative) }
+    }
+}
+$newFiles = @($copies.Relative)
+$stale = @($oldFiles | ForEach-Object { Resolve-ManagedPath $_ } | Where-Object { $_ -notin $copies.Target })
+$touched = @($copies.Target) + $stale + @($keysPath, $manifestPath)
+if ($layout) { $touched += $layoutPath }
+$touched = @($touched | Select-Object -Unique)
+$backup = Join-Path $AppHome ('backups\files-workspace-' + [Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $backup | Out-Null
+$records = @()
+foreach ($target in $touched) {
+    $saved = Join-Path $backup $records.Count
+    $exists = Test-Path -LiteralPath $target -PathType Leaf
+    if ($exists) { Copy-Item -LiteralPath $target -Destination $saved }
+    $records += [pscustomobject]@{ Target = $target; Backup = $saved; Existed = $exists }
+}
+$records | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $backup 'restore.json') -Encoding UTF8
+try {
+    # Publish dependencies before entry points to reduce hot-reload failures.
+    foreach ($copy in $copies | Sort-Object { [IO.Path]::GetFileName($_.Target) -eq 'main.js' }) {
+        New-Item -ItemType Directory -Path (Split-Path -Parent $copy.Target) -Force | Out-Null
+        Copy-Item -LiteralPath $copy.Source -Destination $copy.Target -Force
+    }
+    foreach ($target in $stale) { if (Test-Path -LiteralPath $target -PathType Leaf) { Remove-Item -LiteralPath $target -Force } }
+    [IO.File]::WriteAllText($keysPath, ($keys | ConvertTo-Json -Depth 50), [Text.UTF8Encoding]::new($false))
+    if ($layout) { [IO.File]::WriteAllText($layoutPath, ($layout | ConvertTo-Json -Depth 50), [Text.UTF8Encoding]::new($false)) }
+    foreach ($name in @('files-workspace', 'files-workspace-header')) {
+        herdr-app check (Join-Path $AppHome "mods\$name") | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Installed mod check failed: $name" }
+    }
+    New-Item -ItemType Directory -Path (Split-Path -Parent $manifestPath) -Force | Out-Null
+    [IO.File]::WriteAllText($manifestPath, (@{files=$newFiles} | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
+} catch {
+    $failure = $_
+    $restoreErrors = @()
+    foreach ($record in $records | Sort-Object { [IO.Path]::GetFileName($_.Target) -eq 'main.js' }) {
+        try {
+            if ($record.Existed) { Copy-Item -LiteralPath $record.Backup -Destination $record.Target -Force }
+            elseif (Test-Path -LiteralPath $record.Target -PathType Leaf) { Remove-Item -LiteralPath $record.Target -Force }
+        } catch { $restoreErrors += $_.Exception.Message }
+    }
+    if ($restoreErrors.Count) { throw "Install failed: $failure. Restore errors: $($restoreErrors -join '; '). Backup: $backup" }
+    throw "Install failed; previous files restored. $failure Backup: $backup"
+}
+Write-Output "Herdr Files Workspace installed. Backup: $backup"
+Write-Output 'Keep your existing custom layout. For first installation, clone main and point its Files block at files-workspace (see WINDOWS.md).'
