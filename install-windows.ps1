@@ -26,3 +26,25 @@ herdr-app check $destination | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "Installed mod check failed. Backup: $backup" }
 Write-Output "Installed. Backup: $backup"
 Write-Output 'Keep your existing custom layout. For first installation, clone main and point its Files block at files-transfer (see WINDOWS.md).'
+
+# Optional companion header for the custom Windows layout only.
+$headerSource = Join-Path $PSScriptRoot 'mods\files-transfer-header'
+$headerTarget = Join-Path $AppHome 'mods\files-transfer-header'
+herdr-app check $headerSource | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'Header check failed.' }
+if (Test-Path -LiteralPath $headerTarget) { Copy-Item -LiteralPath $headerTarget -Destination $backup -Recurse }
+New-Item -ItemType Directory -Path $headerTarget -Force | Out-Null
+Get-ChildItem -LiteralPath $headerSource | Copy-Item -Destination $headerTarget -Recurse -Force
+$layoutPath = Join-Path $AppHome 'layouts\main-files-transfer-windows.json'
+if (Test-Path -LiteralPath $layoutPath) {
+    Copy-Item -LiteralPath $layoutPath -Destination $backup
+    $layout = Get-Content -LiteralPath $layoutPath -Raw | ConvertFrom-Json
+    function Update-FileHeader($node) {
+        if ($node.content.pane.header.content.mod -eq 'pane') {
+            $node.content.pane.header.content.mod = 'files-transfer-header'
+        }
+        foreach ($child in $node.children) { Update-FileHeader $child }
+    }
+    Update-FileHeader $layout
+    [IO.File]::WriteAllText($layoutPath, ($layout | ConvertTo-Json -Depth 50), [Text.UTF8Encoding]::new($false))
+}

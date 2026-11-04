@@ -15,6 +15,14 @@ Expanded folders and selected files survive file-tab transitions and returning
 to previously browsed roots within the running panel. These tree states are
 in-memory; restarting/reloading the mod can reset them.
 
+The companion `files-transfer-header` displays the full local/SSH file path in
+the pane's top header. The Windows installer connects it in the custom
+`main-files-transfer-windows` layout and backs up the previous layout. Other
+layouts can use it by changing their pane header's `content.mod` from `pane` to
+`files-transfer-header`; the shipped `pane` mod remains unchanged. Save and Reload
+remain inside the editor. Without the companion header the editor shows its path
+in the original location.
+
 Use **Files** in the tab bar. Right-click a file or folder for download, paste, new file/folder, rename, copy path, Explorer reveal, and Recycle Bin. Explorer file copies can be pasted with **Ctrl+V** while the panel has keyboard focus, or dragged onto the target folder. Remote items retain the explicit permanent-delete confirmation.
 
 Choose **Download to…** to select a local destination and start downloading there. Herdr remembers that folder across panels and restarts; the quick-download item becomes **Download to <selected path>**. Canceling the picker leaves the previous destination unchanged and starts no transfer. Until a folder is selected, quick download uses the Windows Downloads known folder. To change it again (including back to Downloads), use **Download to…** again. Each running transfer keeps the destination it started with.
