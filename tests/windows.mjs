@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const testRoot = fs.mkdtempSync(path.join(repo, '.test-windows-'));
 const app = path.join(testRoot, 'app');
-fs.mkdirSync(path.join(app, 'mods/files-transfer'), {recursive:true});
-fs.copyFileSync(path.join(repo, 'mods/files-transfer/windows.ps1'), path.join(app, 'mods/files-transfer/windows.ps1'));
+fs.mkdirSync(path.join(app, 'mods/files-workspace'), {recursive:true});
+fs.copyFileSync(path.join(repo, 'mods/files-workspace/windows.ps1'), path.join(app, 'mods/files-workspace/windows.ps1'));
 function nativeExec(cmd, args) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {windowsHide:true});
@@ -19,7 +19,7 @@ function nativeExec(cmd, args) {
   });
 }
 globalThis.__herdr = {nativeExec, window: () => ({platform:'windows'}), appHome: () => app};
-const adapterSource = fs.readFileSync(path.join(repo, 'mods/files-transfer/windows.js'), 'utf8')
+const adapterSource = fs.readFileSync(path.join(repo, 'mods/files-workspace/windows.js'), 'utf8')
   .replace('import { exec as nativeExec, window, appHome } from "herdr";', 'const {nativeExec,window,appHome} = globalThis.__herdr;');
 const {windows,exec} = await import('data:text/javascript;base64,' + Buffer.from(adapterSource).toString('base64'));
 const ok = async (action, args) => {
@@ -53,7 +53,7 @@ console.log('PASS Unicode, spaces, quotes, brackets, literal shell syntax, creat
 const dest = path.join(testRoot,'target'); fs.mkdirSync(dest);
 for (let i=0;i<2;i++) {
   const tmp = await ok('temp',[path.join(dest,'.herdr-upload.XXXXXX')]);
-  const st = path.join(app,'data/files-transfer',`send-${i}`);
+  const st = path.join(app,'data/files-workspace',`send-${i}`);
   await ok('send',[st,'cp',tmp,renamed,folder]); await waitJob(st);
   await ok('place',[tmp,dest]);
 }
@@ -62,7 +62,7 @@ assert.equal(fs.readFileSync(path.join(dest,'폴더 [1] (1)','.hidden'),'utf8'),
 assert(!fs.readdirSync(dest).some(n=>n.startsWith('.herdr-upload.')));
 console.log('PASS detached uploads, hidden files, atomic collision naming, staging cleanup');
 
-const stBad = path.join(app,'data/files-transfer/bad-send');
+const stBad = path.join(app,'data/files-workspace/bad-send');
 const sameName = path.join(testRoot,path.basename(renamed)); fs.writeFileSync(sameName,'other');
 assert.equal((await windows('send',[stBad,'cp',dest,renamed,sameName])).code,1);
 assert.equal((await windows('cleanup',[fixture])).code,1);
@@ -70,7 +70,7 @@ assert.equal((await windows('place',[fixture,dest])).code,1);
 assert(fs.existsSync(renamed));
 console.log('PASS duplicate-selection rejection and cleanup boundary protections');
 
-const preview = path.join(app,'data/files-transfer/preview');
+const preview = path.join(app,'data/files-workspace/preview');
 await ok('clean-preview',[preview]);
 const png = path.join(preview,'image.png');
 fs.writeFileSync(png,Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ9sAAAAASUVORK5CYII=','base64'));
@@ -86,7 +86,7 @@ const testFile = path.join(testRoot,testName); fs.writeFileSync(testFile,'synthe
 const downloaded = [];
 try {
   for (let i=0;i<2;i++) {
-    const st = path.join(app,'data/files-transfer',`download-${i}`);
+    const st = path.join(app,'data/files-workspace',`download-${i}`);
     await ok('download',[testFile,'',testName,st,'cp','0']); await waitJob(st);
     const result = fs.readFileSync(st+'.dest','utf8'); downloaded.push(result);
     assert.equal(fs.readFileSync(result,'utf8'),'synthetic transfer test');
@@ -103,16 +103,16 @@ console.log('PASS detached downloads, Windows Downloads folder, duplicate names'
 const custom = path.join(testRoot, "받은 파일 ' [custom] $(literal)");
 fs.mkdirSync(custom);
 for (let i=0;i<2;i++) {
-  const st = path.join(app,'data/files-transfer',`custom-${i}`);
+  const st = path.join(app,'data/files-workspace',`custom-${i}`);
   await ok('download',[testFile,custom,testName,st,'cp','0']); await waitJob(st);
   const result = fs.readFileSync(st+'.dest','utf8');
   assert.equal(path.dirname(result),custom);
   assert.equal(fs.readFileSync(result,'utf8'),'synthetic transfer test');
 }
 assert(fs.existsSync(path.join(custom,testName.replace(/\.txt$/,' (1).txt'))));
-assert.equal((await windows('download',[testFile,'relative-folder',testName,path.join(app,'data/files-transfer','relative'),'cp','0'])).code,1);
+assert.equal((await windows('download',[testFile,'relative-folder',testName,path.join(app,'data/files-workspace','relative'),'cp','0'])).code,1);
 console.log('PASS custom download directory, special characters, collision names, invalid-path rejection');
-const selfDownload = path.join(app,'data/files-transfer','self-download');
+const selfDownload = path.join(app,'data/files-workspace','self-download');
 await ok('download',[folder,path.join(folder,'inside'),'folder',selfDownload,'cp','1']);
 await waitJob(selfDownload,'1');
 assert(!fs.existsSync(path.join(folder,'inside')));
@@ -121,13 +121,13 @@ const listingViaAdapter = await exec('sh',['-c','wc -c < "$1"','size',renamed]);
 assert.equal(Number(listingViaAdapter.stdout.trim()),Buffer.byteLength('테스트\nhello'));
 console.log('PASS JavaScript adapter -> PowerShell JSON/quoting round trip');
 const failTmp = await ok('temp',[path.join(dest,'.herdr-upload.XXXXXX')]);
-const failStatus = path.join(app,'data/files-transfer','missing-source');
+const failStatus = path.join(app,'data/files-workspace','missing-source');
 await ok('send',[failStatus,'cp',failTmp,path.join(testRoot,'not-there')]);
 await waitJob(failStatus,'1');
 assert(fs.readFileSync(failStatus+'.log','utf8').trim());
 await ok('cleanup',[failTmp]);
 const recursiveTmp = await ok('temp',[path.join(folder,'.herdr-upload.XXXXXX')]);
-const recursiveStatus = path.join(app,'data/files-transfer','self-copy');
+const recursiveStatus = path.join(app,'data/files-workspace','self-copy');
 await ok('send',[recursiveStatus,'cp',recursiveTmp,folder]);
 await waitJob(recursiveStatus,'1');
 await ok('cleanup',[recursiveTmp]);

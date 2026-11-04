@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-const src=fs.readFileSync('mods/files-transfer/main.js','utf8');
+const src=fs.readFileSync('mods/files-workspace/main.js','utf8');
 let loc={cwd:'/repo',on:'dgx01'};
 const body=src.slice(src.indexOf('  refresh(cx) {'),src.indexOf('  toggle(path, cx) {'));
 const proto=vm.runInNewContext('class Panel {'+body+'}; Panel.prototype',{location:()=>loc,key:()=>JSON.stringify(loc)});

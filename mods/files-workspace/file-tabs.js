@@ -1,7 +1,7 @@
 import { exec, run, shared, setShared, panes, window } from "herdr";
-export const TAB_KEY = "files-transfer.file-tabs";
+export const TAB_KEY = "files-workspace.file-tabs";
 const opening = new Set();
-export const OPENING_KEY = "files-transfer.opening-tab";
+export const OPENING_KEY = "files-workspace.opening-tab";
 export function fileKey(space, on, file) {
   const path = !on && window()?.platform === "windows" ? file.replaceAll("\\", "/").toLowerCase() : file;
   return JSON.stringify([space, on || null, path]);
@@ -26,7 +26,7 @@ export async function openFile({ space, on, root, file }) {
     setShared(OPENING_KEY, { ...(shared(OPENING_KEY) || {}), [space]: info });
     const media = /\.(png|jpe?g|gif|webp|bmp|svg|ico|tiff?|heic|heif|avif)$/i.test(file);
     const result = await exec("herdr-app", ["do", "tab.new", "--space", space, "--name", name,
-      "--mod", "files-transfer", "--props", JSON.stringify(media ? { viewer: info } : { document: info })]);
+      "--mod", "files-workspace", "--props", JSON.stringify(media ? { viewer: info } : { document: info })]);
     if (result.code !== 0) throw new Error(result.stderr || result.stdout || "Cannot open file tab");
     const created = JSON.parse(result.stdout);
     if (!created.tab) throw new Error(created.error || "No file tab was created");

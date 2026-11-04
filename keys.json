@@ -1,6 +1,6 @@
 {
-  "mod:files-transfer": {
-    "ctrl-s": "files-transfer.save",
-    "cmd-s": "files-transfer.save"
+  "mod:files-workspace": {
+    "ctrl-s": "files-workspace.save",
+    "cmd-s": "files-workspace.save"
   }
 }

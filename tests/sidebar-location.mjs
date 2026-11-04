@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-const src=fs.readFileSync('mods/files-transfer/main.js','utf8');
+const src=fs.readFileSync('mods/files-workspace/main.js','utf8');
 let active={id:'dgx/space',active:true,machine:'dgx',folder:'/repo'};
 let focus={tab:'terminal',pane:'terminal',cwd:'/repo'};
 const location=vm.runInNewContext(src.slice(src.indexOf('const browseLocations ='),src.indexOf('const key ='))+'\nlocation',{

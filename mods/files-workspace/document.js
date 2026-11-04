@@ -67,11 +67,11 @@ export default class Document {
     const encoded = JSON.stringify(state);
     if (encoded !== this.headerState) {
       this.headerState = encoded;
-      setShared("files-transfer.editor:" + this.info.key, state);
+      setShared("files-workspace.editor:" + this.info.key, state);
     }
   }
   takeHeader(cx) {
-    const key = "files-transfer.editor-action:" + this.info.key;
+    const key = "files-workspace.editor-action:" + this.info.key;
     const request = shared(key);
     if (!request || request.token !== this.headerToken || request.id === this.headerRequest) return;
     this.headerRequest = request.id;
@@ -108,12 +108,12 @@ export default class Document {
     persistDraft(this.info.key, this.buffer, this.version); this.draftPending = false;
   }
   close() { this.flushDraft(); this.editor?.release();
-    const key = "files-transfer.editor:" + this.info.key;
+    const key = "files-workspace.editor:" + this.info.key;
     if (shared(key)?.token === this.headerToken) setShared(key, null);
   }
   render(cx) {
     const t = theme();
-    const pathInHeader = JSON.stringify(layout()).includes("files-transfer-header");
+    const pathInHeader = JSON.stringify(layout()).includes("files-workspace-header");
     const button = (id, label, action) => div().id(id).px(9).py(4).rounded(5).cursor_pointer().hover(s => s.bg(t.hover)).on_click((_e, cx) => action(cx)).child(label);
     return v_flex().size_full().min_h(0).bg(t.background).text_color(t.foreground)
       .on_key_down((e, cx) => { if (e.keystroke === "ctrl-s" || e.keystroke === "cmd-s") { cx.stop_propagation(); this.save(cx); } })

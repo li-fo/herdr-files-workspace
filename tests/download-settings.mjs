@@ -9,13 +9,13 @@ const shared = key => values.get(key);
 const setShared = (key,value) => values.set(key,value);
 const pickFolder = async () => { pickerCalls++; return picked; };
 function loadSettings() {
-  const source = fs.readFileSync('mods/files-transfer/download-settings.js','utf8')
+  const source = fs.readFileSync('mods/files-workspace/download-settings.js','utf8')
     .replace(/^import .*;$/gm,'').replaceAll('export ', '');
   const context = vm.createContext({shared,setShared,pickFolder});
   return vm.runInContext(source + '\n({downloadDirectory,chooseDownloadDirectory})',context);
 }
 const settings = loadSettings();
-const source = fs.readFileSync('mods/files-transfer/main.js','utf8')
+const source = fs.readFileSync('mods/files-workspace/main.js','utf8')
   .replace(/^import .*;$/gm,'').replace('export default class Files','class Files');
 const context = vm.createContext({
   ...settings, shared, setShared, View:class {}, isWindows:()=>true,

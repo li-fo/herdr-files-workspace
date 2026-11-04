@@ -60,7 +60,7 @@ export async function saveText(info, snapshot, version) {
   const machines = JSON.parse((await hc(["machine", "ls", "--json"])).stdout || "{}");
   const target = machines.machines?.find(m => m.name === info.on)?.target;
   if (!target) throw new Error("No SSH address for " + info.on);
-  const spool = `${appHome()}/data/files-transfer/editor/${Date.now()}-${Math.random().toString(36).slice(2)}.txt`;
+  const spool = `${appHome()}/data/files-workspace/editor/${Date.now()}-${Math.random().toString(36).slice(2)}.txt`;
   let stage = null;
   try {
     await writeTextFile(spool, snapshot.raw, null);

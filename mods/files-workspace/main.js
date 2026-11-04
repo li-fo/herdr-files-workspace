@@ -23,8 +23,8 @@ import Document from "./document.js";
 // and the confirmation are this mod opened as a popup / dialog (props().menu, .confirm);
 // they hand the choice to the panel that opened them through shared "files.request", since
 // an overlay's tasks end when it closes and a transfer can take long.
-const REQUEST = "files-transfer.request";
-const LANG_KEY = "files-transfer.lang";
+const REQUEST = "files-workspace.request";
+const LANG_KEY = "files-workspace.lang";
 const MENU_ROW = 31;
 // Our temporary folders, never listed in the tree.
 const TEMP = /^\.herdr-(upload|download)\./;
@@ -163,7 +163,7 @@ const T = () => {
 const MARKDOWN = /\.(md|markdown|mdx)$/i;
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp|svg|ico|tiff?|heic|heif|avif)$/i;
 const CONVERT = /\.(ico|tiff?|heic|heif|avif)$/i;
-const PREVIEW_DIR = "data/files-transfer/preview";
+const PREVIEW_DIR = "data/files-workspace/preview";
 const MAX_IMAGE = 50 * 1024 * 1024;
 // Preview Plus (linziyanleo/herdr-mods), when the layout pairs it with this panel in a stack
 // (this block's props.previewStack names the stack, its child "preview-plus" shows the file):
@@ -237,7 +237,7 @@ function location() {
 const key = () => JSON.stringify(location());
 const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", toml: "yaml", jsonc: "json", svelte: "html", vue: "html" };
 const PER_FOLDER = 500, TOTAL = 5000;
-const DIR = "mods/files-transfer";
+const DIR = "mods/files-workspace";
 
 // Material Icon Theme's rules, as VS Code applies them: names match case-insensitively; a
 // path rule (".github/workflows") beats a name, a name beats an extension, and the longest
@@ -493,7 +493,7 @@ export default class Files extends View {
       ? { path: `${this.root}/${path}`, name: path.split("/").pop(), dir, on: this.on ?? null, from: this.me }
       : { path: this.root, name: this.root.split("/").pop(), dir: true, root: true, on: this.on ?? null, from: this.me };
     target.previewStack = props()?.previewStack;
-    openOverlay({ mod: "files-transfer", kind: "popup", width: downloadDirectory() ? 460 : 250, height: menuHeight(MENU(target)), props: { menu: target } });
+    openOverlay({ mod: "files-workspace", kind: "popup", width: downloadDirectory() ? 460 : 250, height: menuHeight(MENU(target)), props: { menu: target } });
   }
 
   // A choice made in the menu or the confirmation, for this panel.
@@ -505,13 +505,13 @@ export default class Files extends View {
     const { action, path, name, dir, on } = req;
     if (action === "preview-plus") { this.handoff(path.slice(this.root.length + 1), cx); return; }
     if (action === "delete") {
-      openOverlay({ mod: "files-transfer", kind: "dialog", width: 420, height: 176, props: { confirm: { path, name, dir, on, from: this.me } } });
+      openOverlay({ mod: "files-workspace", kind: "dialog", width: 420, height: 176, props: { confirm: { path, name, dir, on, from: this.me } } });
       return;
     }
     if (action === "new-file" || action === "new-folder" || action === "rename") {
       // New entries go into the folder clicked, or beside the file clicked.
       const folder = action === "rename" ? parentOf(path) : dir ? path : parentOf(path);
-      openOverlay({ mod: "files-transfer", kind: "dialog", width: 440, height: 214,
+      openOverlay({ mod: "files-workspace", kind: "dialog", width: 440, height: 214,
         props: { ask: { kind: action, folder, path, name, dir, on, from: this.me } } });
       return;
     }
@@ -609,7 +609,7 @@ export default class Files extends View {
     // An empty Windows destination selects the actual Windows Downloads known folder.
     const destination = selected ?? (isWindows() ? "" : `${home()}/Downloads`);
     const src = on ? `${await sshTarget(on)}:${path}` : path;
-    const status = `${appHome()}/data/files-transfer/${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const status = `${appHome()}/data/files-workspace/${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const r = await exec("sh", ["-c", FETCH, "fetch", src, destination, name, status, on ? "scp" : "cp", dir ? "1" : "0"]);
     if (r.code !== 0) throw new Error((r.stderr || `exit ${r.code}`).trim());
     this.jobs.push({ kind: "download", status, name, destination });
@@ -623,7 +623,7 @@ export default class Files extends View {
     if (mk.code !== 0) throw new Error((mk.stderr || `exit ${mk.code}`).trim());
     const tmp = mk.stdout.trim();
     const dest = on ? `${await sshTarget(on)}:${tmp}/` : `${tmp}/`;
-    const status = `${appHome()}/data/files-transfer/${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const status = `${appHome()}/data/files-workspace/${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const r = await exec("sh", ["-c", SEND, "send", status, on ? "scp" : "cp", dest, ...files]);
     if (r.code !== 0) {
       await exec("rm", ["-rf", "--", tmp], { on }).catch(() => {});

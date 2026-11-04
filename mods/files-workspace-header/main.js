@@ -44,8 +44,8 @@ export default class Pane extends View {
       .on_click((_e, cx) => {
         cx.stop_propagation();
         if (state.loading || state.saving) return;
-        setShared("files-transfer.editor-action:" + file.key, { token: state.token, action, id: `${Date.now()}-${Math.random()}` });
-        run("files-transfer.header");
+        setShared("files-workspace.editor-action:" + file.key, { token: state.token, action, id: `${Date.now()}-${Math.random()}` });
+        run("files-workspace.header");
       }).child(label);
   }
 
@@ -53,8 +53,8 @@ export default class Pane extends View {
     const t = theme();
     const p = this.me();
     if (!p) return div();
-    const file = p.mod === "files-transfer" ? Object.values(shared("files-transfer.file-tabs") || {}).find(item => item.tab === p.tab) : null;
-    const editor = file ? shared("files-transfer.editor:" + file.key) : null;
+    const file = p.mod === "files-workspace" ? Object.values(shared("files-workspace.file-tabs") || {}).find(item => item.tab === p.tab) : null;
+    const editor = file ? shared("files-workspace.editor:" + file.key) : null;
     const name = ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
     const pic = icon(p.program, 14, t.dim);
     const st = p.status;

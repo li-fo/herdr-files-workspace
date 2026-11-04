@@ -20,7 +20,7 @@ image previews, a hand-off to Preview Plus when paired, drag-and-drop upload, ba
 machines, English and Russian interface text, the install script, and the
 mod's renaming to files-transfer.
 
-Icons in mods/files-transfer/icons/ come from Material Icon Theme
+Icons in mods/files-workspace/icons/ come from Material Icon Theme
 (https://github.com/material-extensions/vscode-material-icon-theme), MIT.
 Menu and chevron glyphs come from Lucide (https://lucide.dev), ISC.
 finder.svg and spinner.svg are copied from the Herdr app's workspace-chrome

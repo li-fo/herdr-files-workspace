@@ -1,4 +1,6 @@
-# Files Transfer
+# Herdr Files Workspace
+
+Current behavior and installation are documented in [README.md](README.md) and [WINDOWS.md](WINDOWS.md). The design notes below describe the inherited upstream interface; file opening now uses editable Space tabs.
 
 Herdr's Files panel with file transfer and VS Code's file icons. Right-click a file or folder for a small menu: download it to `~/Downloads`, paste files copied in Finder into it (upload), copy its path, reveal it in Finder, create a file or folder, rename it, move it to the Trash (this Mac) or delete it after a confirmation (remote). Markdown opens formatted and images open fitted; paired with Preview Plus, Markdown, images and PDFs open there. It works on this computer and on remote machines the space runs on (over ssh). Files dragged from Finder onto the panel upload too. It replaces the shipped Files panel in the person's layout.
 
@@ -38,12 +40,12 @@ The panel follows the focused pane's folder (on its machine), refreshes every 10
 
 ## Built from
 
-- **One mod**, `mods/files-transfer/`, `mod.json` `{ "place": "none" }`. `main.js` is Herdr's shipped `files` mod with File Icons' changes (`DIR`, `icon(path, dir, open, dark)` from `icons.js`, `image()` icons) plus the menu and transfers. `icons/` (1184 SVGs) and `icons.js` come from Material Icon Theme 5.40.0 via `tools/build-icons.mjs`. Glyphs: `download.svg`, `paste.svg`, `copy.svg`, `trash.svg`, `chevron-*.svg` (Lucide), `finder.svg`, `spinner.svg` (Herdr's workspace-chrome).
-- **The same mod draws three things**: the panel; the menu when `props().menu` is set (`openOverlay({ mod: "files-transfer", kind: "popup", width: 250, props: { menu: target } })`); the confirmation when `props().confirm` is set (`kind: "dialog"`). The overlays hand the choice back through shared `files-transfer.request` (`{ id, action, path, name, dir, on, from }`), and only the panel copy whose random `from` id opened the menu acts on it. That's because an overlay's tasks end when it closes, and a transfer outlives it.
-- **Layout**: the Files block keeps `"id": "files"` (the tab bar's button selects it by id) and gets `"content": { "mod": "files-transfer" }`. `install.sh` clones a shipped layout first.
-- `herdr`: `spaces`, `panes`, `focused`, `exec` (with `on` for the space's machine), `hc(["machine","ls","--json"])` (a machine's ssh `target`), `readTextFile`, `watchFolder`, `theme`, `settings`, `window`, `props`, `openOverlay`, `closeOverlay`, `shared`/`setShared` (`files-transfer.request`, `files-transfer.lang`), `notify`, `appHome`, `home`.
+- **One mod**, `mods/files-workspace/`, `mod.json` `{ "place": "none" }`. `main.js` is Herdr's shipped `files` mod with File Icons' changes (`DIR`, `icon(path, dir, open, dark)` from `icons.js`, `image()` icons) plus the menu and transfers. `icons/` (1184 SVGs) and `icons.js` come from Material Icon Theme 5.40.0 via `tools/build-icons.mjs`. Glyphs: `download.svg`, `paste.svg`, `copy.svg`, `trash.svg`, `chevron-*.svg` (Lucide), `finder.svg`, `spinner.svg` (Herdr's workspace-chrome).
+- **The same mod draws three things**: the panel; the menu when `props().menu` is set (`openOverlay({ mod: "files-workspace", kind: "popup", width: 250, props: { menu: target } })`); the confirmation when `props().confirm` is set (`kind: "dialog"`). The overlays hand the choice back through shared `files-workspace.request` (`{ id, action, path, name, dir, on, from }`), and only the panel copy whose random `from` id opened the menu acts on it. That's because an overlay's tasks end when it closes, and a transfer outlives it.
+- **Layout**: the Files block keeps `"id": "files"` (the tab bar's button selects it by id) and gets `"content": { "mod": "files-workspace" }`. `install.sh` clones a shipped layout first.
+- `herdr`: `spaces`, `panes`, `focused`, `exec` (with `on` for the space's machine), `hc(["machine","ls","--json"])` (a machine's ssh `target`), `readTextFile`, `watchFolder`, `theme`, `settings`, `window`, `props`, `openOverlay`, `closeOverlay`, `shared`/`setShared` (`files-workspace.request`, `files-workspace.lang`), `notify`, `appHome`, `home`.
 - **Programs**: `scp`, `cp`, `mktemp`, `mv`, `ln`, `rm`, `sh`, `git`; macOS `osascript -l JavaScript` (NSPasteboard file URLs), `pbcopy`, `open -R`, `defaults read -g AppleLanguages`.
-- **Transfers run detached** (`nohup sh -c … &`) because `exec` stops at 30 s. Each writes its exit code to `<app home>/data/files-transfer/<id>` (and `.log`, `.dest`); the panel polls those once a second while any transfer runs. Download: into `mktemp -d ~/Downloads/.herdr-download.XXXXXX`, then claim a free name. Upload: `mktemp -d <dir>/.herdr-upload.XXXXXX` on the target, scp/cp into it, then a script on the target moves each item into place under a free name and prints the names it used.
+- **Transfers run detached** (`nohup sh -c … &`) because `exec` stops at 30 s. Each writes its exit code to `<app home>/data/files-workspace/<id>` (and `.log`, `.dest`); the panel polls those once a second while any transfer runs. Download: into `mktemp -d ~/Downloads/.herdr-download.XXXXXX`, then claim a free name. Upload: `mktemp -d <dir>/.herdr-upload.XXXXXX` on the target, scp/cp into it, then a script on the target moves each item into place under a free name and prints the names it used.
 
 - **Pairing with Preview Plus** (optional): the layout's `files` block becomes a stack whose children are `files-plus-tree` (this mod, `props.previewStack: "files"`) and `preview-plus`. A click on `.md`, `.png`, `.jpg`, `.webp`, `.svg` or `.pdf` writes `shared("preview-plus.target")[spaceId] = { file, root, on }` and runs `layout.select { stack, child: "preview-plus" }`; Preview Plus's Back selects `files-plus-tree` (that id is fixed by Preview Plus). Remote media are staged here first and handed over with `on: null`.
 
@@ -63,7 +65,7 @@ The panel follows the focused pane's folder (on its machine), refreshes every 10
 
 ## Done when
 
-- `herdr-app check mods/files-transfer` passes, and the Files button shows the tree with coloured icons.
+- `herdr-app check mods/files-workspace` passes, and the Files button shows the tree with coloured icons.
 - In a remote space, Download on a file puts it in `~/Downloads`; doing it twice gives `name (1).ext`; Download on a folder brings its dotfiles too.
 - Copy a file and a folder in Finder, then Paste into this folder on a remote folder: both appear there; pasting again gives `name (1)` copies; no `.herdr-upload.*` folder is left.
 - Dropping a file from Finder onto a folder uploads it into that folder.

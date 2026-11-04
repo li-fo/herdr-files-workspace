@@ -7,7 +7,7 @@ $utf8 = [Text.UTF8Encoding]::new($false)
 $OutputEncoding = $utf8
 $r = ConvertFrom-Json -InputObject $Request
 $a = @($r.args)
-$dataRoot = [IO.Path]::GetFullPath((Join-Path $r.appHome 'data/files-transfer'))
+$dataRoot = [IO.Path]::GetFullPath((Join-Path $r.appHome 'data/files-workspace'))
 
 function Full([string]$p) { [IO.Path]::GetFullPath($p) }
 function Under([string]$p, [string]$base) {

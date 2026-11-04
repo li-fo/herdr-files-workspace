@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-const source=fs.readFileSync('mods/files-transfer/text-buffer.js','utf8').replaceAll('export ','');
+const source=fs.readFileSync('mods/files-workspace/text-buffer.js','utf8').replaceAll('export ','');
 const {TextBuffer,byteLength}=vm.runInNewContext(source+'\n({TextBuffer,byteLength})');
 const raw='\ufeff# 한글\r\nhello\r\n', b=new TextBuffer(raw);
 assert.equal(b.text,'# 한글\nhello\n');assert.equal(b.dirty,false);

@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-const {TextBuffer}=vm.runInNewContext(fs.readFileSync('mods/files-transfer/text-buffer.js','utf8').replaceAll('export ','')+'\n({TextBuffer})');
+const {TextBuffer}=vm.runInNewContext(fs.readFileSync('mods/files-workspace/text-buffer.js','utf8').replaceAll('export ','')+'\n({TextBuffer})');
 const values=new Map();
-const source=fs.readFileSync('mods/files-transfer/drafts.js','utf8').replace(/^import .*;$/gm,'').replaceAll('export ','');
+const source=fs.readFileSync('mods/files-workspace/drafts.js','utf8').replace(/^import .*;$/gm,'').replaceAll('export ','');
 const api=vm.runInNewContext(source+'\n({readDraft,persistDraft,restoreDraft})',{TextBuffer,shared:k=>values.get(k),setShared:(k,v)=>values.set(k,v)});
 const b=new TextBuffer('\ufeffhello\r\n');b.text='edited\n';
 api.persistDraft('file',b,'old-version');

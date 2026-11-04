@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Regenerates mods/files-transfer/icons/ and mods/files-transfer/icons.js from the
+// Regenerates mods/files-workspace/icons/ and mods/files-workspace/icons.js from the
 // material-icon-theme npm package (MIT, https://github.com/material-extensions/vscode-material-icon-theme).
 //
 //   node tools/build-icons.mjs [version]     default: the version pinned below
 //
-// Needs node, npm and tar. Writes only inside mods/files-transfer/.
+// Needs node, npm and tar. Writes only inside mods/files-workspace/.
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync, rmSync, mkdirSync, copyFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,7 +15,7 @@ const VERSION = process.argv[2] ?? "5.40.0";
 const MOD = join(dirname(fileURLToPath(import.meta.url)), "..", "mods", "file-icons");
 const ICONS = join(MOD, "icons");
 
-const tmp = mkdtempSync(join(tmpdir(), "files-transfer-"));
+const tmp = mkdtempSync(join(tmpdir(), "files-workspace-"));
 try {
   const tgz = execFileSync("npm", ["pack", `material-icon-theme@${VERSION}`, "--silent"], { cwd: tmp, encoding: "utf8" }).trim().split("\n").pop();
   execFileSync("tar", ["xzf", tgz], { cwd: tmp });

@@ -47,13 +47,12 @@ that file: they are stored locally in Herdr shared state, including remote-file
 drafts. Reopening a file may restore its unsaved draft. Forced termination can
 lose recent typing. Reload asks for a second click before discarding edits.
 
-## Compatibility identifiers
+## Module identifiers
 
-The project name is **Herdr Files Workspace**. The existing internal identifiers
-`files-transfer`, `files-transfer-header`, and `main-files-transfer-windows`
-remain stable so installed layouts, open tabs, save shortcuts, download settings
-and recovery drafts continue to work. These names are implementation identifiers,
-not a second product name. Existing checkouts do not need to be moved or re-cloned.
+The modules are `files-workspace` and `files-workspace-header`; the custom Windows
+layout is `main-files-workspace-windows`. This is a fresh installation namespace:
+old Files Transfer tabs, drafts and settings are not migrated. Close the old file
+tabs before switching. Source files on local or remote disks are unaffected.
 
 ## Origin and licenses
 

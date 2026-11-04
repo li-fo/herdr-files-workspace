@@ -6,7 +6,7 @@ const quote = value => "'" + String(value).replaceAll("'", "''") + "'";
 export function windows(action, args = []) {
   const request = JSON.stringify({ action, args, appHome: appHome() });
   return nativeExec("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-Command",
-    `& ${quote(appHome() + "/mods/files-transfer/windows.ps1")} -Request ${quote(request)}; exit $LASTEXITCODE`]);
+    `& ${quote(appHome() + "/mods/files-workspace/windows.ps1")} -Request ${quote(request)}; exit $LASTEXITCODE`]);
 }
 export async function exec(command, args = [], options = {}) {
   if (!isWindows() || options.on) return nativeExec(command, args, options);

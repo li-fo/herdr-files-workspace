@@ -1,6 +1,6 @@
 import { shared, setShared } from "herdr";
 import { TextBuffer } from "./text-buffer.js";
-const draftKey = key => "files-transfer.draft:" + key;
+const draftKey = key => "files-workspace.draft:" + key;
 export function readDraft(key) { return shared(draftKey(key)); }
 export function persistDraft(key, buffer, version) {
   if (buffer.dirty) setShared(draftKey(key), { baseRaw: buffer.baseRaw, text: buffer.text, version });

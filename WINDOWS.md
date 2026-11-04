@@ -1,25 +1,25 @@
 # Herdr Files Workspace — Windows
 
-Installed mod: `C:\Users\pgh\.config\herdr-app\mods\files-transfer`
+Installed mod: `C:\Users\pgh\.config\herdr-app\mods\files-workspace`
 
-Active layout: `main-files-transfer-windows`, cloned from `main`. The original layout is preserved.
+Active layout: `main-files-workspace-windows`, cloned from `main`. The original layout is preserved.
 
 Install/update on Windows with `powershell -NoProfile -File .\install-windows.ps1`.
 It backs up the installed mod and keys, checks the mod, and merges scoped Save
 shortcuts. Conflicting shortcuts are reported before changes. It preserves the
 current layout and does not install Preview Plus. For a first installation, clone
-`main` using `herdr-app do layout.clone --name main --as main-files-transfer-windows`,
-then change that clone's Files block from `"mod": "files"` to `"mod": "files-transfer"`.
+`main` using `herdr-app do layout.clone --name main --as main-files-workspace-windows`,
+then change that clone's Files block from `"mod": "files"` to `"mod": "files-workspace"`.
 
 Expanded folders and selected files survive file-tab transitions and returning
 to previously browsed roots within the running panel. These tree states are
 in-memory; restarting/reloading the mod can reset them.
 
-The companion `files-transfer-header` displays the full local/SSH file path in
+The companion `files-workspace-header` displays the full local/SSH file path in
 the pane's top header. The Windows installer connects it in the custom
-`main-files-transfer-windows` layout and backs up the previous layout. Other
+`main-files-workspace-windows` layout and backs up the previous layout. Other
 layouts can use it by changing their pane header's `content.mod` from `pane` to
-`files-transfer-header`; the shipped `pane` mod remains unchanged. Modified/Saving status and Save/Reload controls also appear in the header. Without the companion header the editor shows its path
+`files-workspace-header`; the shipped `pane` mod remains unchanged. Modified/Saving status and Save/Reload controls also appear in the header. Without the companion header the editor shows its path
 in the original location.
 
 Use **Files** in the tab bar. Right-click a file or folder for download, paste, new file/folder, rename, copy path, Explorer reveal, and Recycle Bin. Explorer file copies can be pasted with **Ctrl+V** while the panel has keyboard focus, or dragged onto the target folder. Remote items retain the explicit permanent-delete confirmation.
@@ -47,7 +47,7 @@ Unsaved drafts are stored locally in Herdr shared state approximately once per
 second and on normal tab close. Reopening the file restores its draft. Forced
 termination can lose recent typing. Remote drafts also reside on this computer.
 
-Install all files from `mods/files-transfer/`. Merge the `mod:files-transfer`
+Install all files from `mods/files-workspace/`. Merge the `mod:files-workspace`
 section of this repository's `keys.json` into your Herdr `keys.json`, preserving
 other sections. Back up both the installed mod and keys before updating.
 
@@ -86,10 +86,10 @@ node tests/remote-editor.mjs dgx01
 node tests/windows.mjs
 node tests/download-settings.mjs
 node tests/remote.mjs dgx01
-herdr-app check "$env:USERPROFILE\.config\herdr-app\mods\files-transfer" | Out-Host
+herdr-app check "$env:USERPROFILE\.config\herdr-app\mods\files-workspace" | Out-Host
 ```
 
-Tests create synthetic fixtures, check Unicode/quotes/brackets, collision handling, hidden files, background workers, image conversion, and cleanup boundaries. The remote test uses one unique `/tmp/herdr-files-transfer-test.*` directory, verifies byte-identical round trips, and removes that remote directory. Local test fixtures remain in ignored `.test-*` folders for inspection. The Windows test reads the clipboard without changing it and puts one explicitly named synthetic file in the Recycle Bin.
+Tests create synthetic fixtures, check Unicode/quotes/brackets, collision handling, hidden files, background workers, image conversion, and cleanup boundaries. The remote test uses one unique `/tmp/herdr-files-workspace-test.*` directory, verifies byte-identical round trips, and removes that remote directory. Local test fixtures remain in ignored `.test-*` folders for inspection. The Windows test reads the clipboard without changing it and puts one explicitly named synthetic file in the Recycle Bin.
 
 ## Limits
 
