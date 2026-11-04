@@ -61,8 +61,12 @@ export default class DocumentSearch {
             const index = range.start + offset;
             return div().id(`search-result-${m.start}`).w_full().h(28).px(6).pr(18).py(3).truncate().cursor_pointer()
               .bg(index === this.index ? t.selected : t.background)
-              .on_click((_e, cx) => { this.index = index; cx.notify(); }).child(`${m.line}: ${m.excerpt}`);
-          })).size_full().track_scroll(this.scroll))
+              .child(`${m.line}: ${m.excerpt}`);
+          })).size_full().track_scroll(this.scroll)
+          .on_item_click((key, cx) => {
+            const index = this.results().found.findIndex(m => `${m.start}:${m.end}` === key);
+            if (index >= 0) { this.index = index; cx.notify(); }
+          }))
         .child(Scrollbar.vertical("search-results").absolute().inset_0())));
   }
 }
