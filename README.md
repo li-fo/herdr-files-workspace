@@ -1,5 +1,25 @@
 # Files Transfer for Herdr
 
+> **Windows + lightweight editor fork:** This repository extends upstream
+> `vladimiryakimenko/herdr-files-transfer` at `28f84dd`. Files open in Space tabs;
+> UTF-8 text up to 1 MiB is editable with Save/Ctrl+S and syntax highlighting.
+> Downloads can use a remembered destination. Remote editing requires Python 3
+> and SSH/SCP; unsaved drafts are stored locally. No LSP or debugger is included.
+>
+> On Windows run `powershell -NoProfile -File .\install-windows.ps1` to install or
+> update the mod and merge its scoped save shortcuts, with backups. Existing
+> custom layout configuration is retained. See [WINDOWS.md](WINDOWS.md) for setup,
+> limitations and rollback. The original documentation below describes upstream;
+> its default Markdown preview behavior has changed to source editing here.
+>
+> With Preview Plus configured as described below, use **Open in Preview Plus**
+> in the context menu for Markdown/images. PDFs go directly to Preview Plus;
+> without that integration they show an explanatory notification. The optional
+> Preview Plus mod is not installed automatically.
+>
+> The legacy `install.sh` does not merge editor shortcuts. After using it, merge
+> this repository's `keys.json` into Herdr's keys without replacing other sections.
+
 **Herdr's Files panel with file transfer.** Right-click a file or folder to download it to your Mac, paste files copied in Finder to upload them, create, rename, move to the Trash or delete, or copy a path. It works the same on this computer and on remote machines your spaces run on over ssh. Files and folders show VS Code's colored icons.
 
 ![Files Transfer menu](preview.png)

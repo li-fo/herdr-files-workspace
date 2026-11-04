@@ -4,6 +4,17 @@ Installed mod: `C:\Users\pgh\.config\herdr-app\mods\files-transfer`
 
 Active layout: `main-files-transfer-windows`, cloned from `main`. The original layout is preserved.
 
+Install/update on Windows with `powershell -NoProfile -File .\install-windows.ps1`.
+It backs up the installed mod and keys, checks the mod, and merges scoped Save
+shortcuts. Conflicting shortcuts are reported before changes. It preserves the
+current layout and does not install Preview Plus. For a first installation, clone
+`main` using `herdr-app do layout.clone --name main --as main-files-transfer-windows`,
+then change that clone's Files block from `"mod": "files"` to `"mod": "files-transfer"`.
+
+Expanded folders and selected files survive file-tab transitions and returning
+to previously browsed roots within the running panel. These tree states are
+in-memory; restarting/reloading the mod can reset them.
+
 Use **Files** in the tab bar. Right-click a file or folder for download, paste, new file/folder, rename, copy path, Explorer reveal, and Recycle Bin. Explorer file copies can be pasted with **Ctrl+V** while the panel has keyboard focus, or dragged onto the target folder. Remote items retain the explicit permanent-delete confirmation.
 
 Choose **Download to…** to select a local destination and start downloading there. Herdr remembers that folder across panels and restarts; the quick-download item becomes **Download to <selected path>**. Canceling the picker leaves the previous destination unchanged and starts no transfer. Until a folder is selected, quick download uses the Windows Downloads known folder. To change it again (including back to Downloads), use **Download to…** again. Each running transfer keeps the destination it started with.
