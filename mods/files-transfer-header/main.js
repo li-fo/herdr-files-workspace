@@ -20,8 +20,6 @@ function folder(cwd) {
 }
 
 export default class Pane extends View {
-  init() { this.hovered = false; }
-
   me() {
     return panes().find((p) => p.pane === props()?.pane);
   }
@@ -71,7 +69,6 @@ export default class Pane extends View {
       .border_b(1)
       .border_color(t.border)
       .text_size(12)
-      .on_hover((hovered, cx) => { this.hovered = hovered; cx.notify(); })
       .on_click(() => run("pane.focus", { pane }))
       .when(Boolean(pic), (el) => el.child(pic))
       .when(!file, el => el.child(div().flex_none().truncate().max_w(260).font_medium().text_color(t.foreground).child(name)))
@@ -83,7 +80,8 @@ export default class Pane extends View {
       .when(st === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
       .when(st === "blocked", el => el.child(div().flex_none().px(6).h(18).flex().items_center().rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).child("Needs you")))
       .when(st === "done", el => el.child(div().size(7).flex_none().rounded(4).bg(t.done)))
-      .when(this.hovered, el => el
+      .when(Boolean(editor), el => el.child(div().w(1).h(16).flex_none().mx(3).bg(t.border)))
+      .child(h_flex().flex_none().gap(4).items_center()
         .child(this.button(t, `ph-r-${pane}`, "split-right", "pane.split", { direction: "right", pane }))
         .child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane }))
         .child(this.button(t, `ph-z-${pane}`, p.zoomed ? "unzoom" : "zoom", "pane.zoom", { pane }))
