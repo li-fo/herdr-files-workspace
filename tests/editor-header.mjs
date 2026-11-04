@@ -22,3 +22,10 @@ let prepared=0;fresh.preparePreview=()=>prepared++;
 fresh.togglePreview({notify(){}});assert(fresh.previewMode);assert.equal(prepared,1);
 fresh.togglePreview({notify(){}});assert(!fresh.previewMode);assert.equal(fresh.buffer.text,'unsaved text');assert(fresh.buffer.dirty);assert.equal(fresh.editor.identity,'same-editor');
 console.log('PASS Source default and preview switching preserves unsaved text and editor instance');
+
+const keyDoc = new Document(); const requests = []; let stopped = 0;
+keyDoc.openSearch = replace => requests.push(replace);
+const keyCx = { stop_propagation(){ stopped++; } };
+for (const keystroke of ['ctrl-f','ctrl-h','cmd-f','cmd-alt-f','f','ctrl-s','ctrl-shift-f']) keyDoc.searchKeyUp({keystroke}, keyCx);
+assert.deepEqual(requests, [false,true,false,true]); assert.equal(stopped,4);
+console.log('PASS search key-up routing and unrelated key preservation');

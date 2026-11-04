@@ -96,6 +96,13 @@ export default class Document {
     this.search ||= new DocumentSearch(this);
     this.search.open(replace, cx); this.publishHeader();
   }
+  searchKeyUp(e, cx) {
+    // Native Editor search actions consume key-down before the mod wrapper.
+    // Key-up still bubbles through the focus path, without replacing Editor.
+    if (!["ctrl-f", "cmd-f", "ctrl-h", "cmd-alt-f"].includes(e.keystroke)) return;
+    cx.stop_propagation();
+    this.openSearch(e.keystroke === "ctrl-h" || e.keystroke === "cmd-alt-f", cx);
+  }
   togglePreview(cx) {
     if (!this.markdown || !this.buffer || this.loading) return;
     this.previewMode = !this.previewMode;
@@ -183,6 +190,7 @@ export default class Document {
     const pathInHeader = JSON.stringify(layout()).includes("files-workspace-header");
     const button = (id, label, action) => div().id(id).px(9).py(4).rounded(5).cursor_pointer().hover(s => s.bg(t.hover)).on_click((_e, cx) => action(cx)).child(label);
     return v_flex().track_focus(this.keys).size_full().min_h(0).bg(t.background).text_color(t.foreground)
+      .on_key_up((e, cx) => this.searchKeyUp(e, cx))
       .on_key_down((e, cx) => {
         if (["ctrl-f", "cmd-f", "ctrl-h", "cmd-alt-f"].includes(e.keystroke)) { cx.stop_propagation(); this.openSearch(e.keystroke === "ctrl-h" || e.keystroke === "cmd-alt-f", cx); }
         else if (e.key === "escape" && this.search?.visible) { this.search.visible = false; cx.stop_propagation(); cx.notify(); }
