@@ -1,3 +1,4 @@
+import DocumentSearch from "./document-search.js";
 import { relativePath } from "./paths.js";
 import { markdownBlocks } from "./markdown-blocks.js";
 import { unlink } from "fs/promises";
@@ -17,6 +18,7 @@ export function language(file) {
 }
 export default class Document {
   init(info, cx) {
+    this.keys = cx.focus_handle();
     this.info = info;
     this.markdown = /\.(md|markdown|mdown|mkd)$/i.test(info.file);
     this.previewMode = false; this.previewFiles = []; this.previewRevision = 0;
@@ -32,6 +34,7 @@ export default class Document {
         const tab = (shared(TAB_KEY) || {})[this.info.key]?.tab;
         if (command === "header") this.takeHeader(cx);
         if (command === "save" && focused()?.tab === tab) this.save(cx);
+        if ((command === "find" || command === "replace") && focused()?.tab === tab) this.openSearch(command === "replace", cx);
       }
     });
   }
@@ -85,6 +88,13 @@ export default class Document {
     if (request.action === "save") this.save(cx);
     else if (request.action === "reload") this.reload(cx);
     else if (request.action === "preview") this.togglePreview(cx);
+    else if (request.action === "find") this.openSearch(false, cx);
+  }
+  openSearch(replace, cx) {
+    if (!this.editor || this.loading) return;
+    this.previewMode = false;
+    this.search ||= new DocumentSearch(this);
+    this.search.open(replace, cx); this.publishHeader();
   }
   togglePreview(cx) {
     if (!this.markdown || !this.buffer || this.loading) return;
@@ -163,7 +173,7 @@ export default class Document {
     if (!this.buffer || !this.draftPending) return;
     persistDraft(this.info.key, this.buffer, this.version); this.draftPending = false;
   }
-  close() { this.flushDraft(); this.editor?.release();
+  close() { this.flushDraft(); this.search?.close(); this.editor?.release();
     for (const file of this.previewFiles || []) unlink(file).catch(() => {});
     const key = "files-workspace.editor:" + this.info.key;
     if (shared(key)?.token === this.headerToken) setShared(key, null);
@@ -172,16 +182,22 @@ export default class Document {
     const t = theme();
     const pathInHeader = JSON.stringify(layout()).includes("files-workspace-header");
     const button = (id, label, action) => div().id(id).px(9).py(4).rounded(5).cursor_pointer().hover(s => s.bg(t.hover)).on_click((_e, cx) => action(cx)).child(label);
-    return v_flex().size_full().min_h(0).bg(t.background).text_color(t.foreground)
-      .on_key_down((e, cx) => { if (e.keystroke === "ctrl-s" || e.keystroke === "cmd-s") { cx.stop_propagation(); this.save(cx); } })
+    return v_flex().track_focus(this.keys).size_full().min_h(0).bg(t.background).text_color(t.foreground)
+      .on_key_down((e, cx) => {
+        if (["ctrl-f", "cmd-f", "ctrl-h", "cmd-alt-f"].includes(e.keystroke)) { cx.stop_propagation(); this.openSearch(e.keystroke === "ctrl-h" || e.keystroke === "cmd-alt-f", cx); }
+        else if (e.key === "escape" && this.search?.visible) { this.search.visible = false; cx.stop_propagation(); cx.notify(); }
+        else if (e.keystroke === "ctrl-s" || e.keystroke === "cmd-s") { cx.stop_propagation(); this.save(cx); }
+      })
       .when(!pathInHeader, el => el.child(h_flex().h(36).flex_none().px(12).gap(8).items_center().border_b(1).border_color(t.border).text_size(12)
         .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(pathInHeader ? "" : relativePath(this.info.file, this.info.projectRoot || this.info.root, !this.info.on)))
         .child(div().text_color(t.dim).child(this.saving ? "Saving…" : this.buffer?.dirty ? "Modified" : ""))
         .when(Boolean(this.buffer), el => el.child(button("file-save", "Save", cx => this.save(cx))))
+        .when(Boolean(this.buffer), el => el.child(button("file-find", "Find", cx => this.openSearch(false, cx))))
         .when(this.markdown && Boolean(this.buffer), el => el.child(button("file-preview", this.previewMode ? "Source" : "Preview", cx => this.togglePreview(cx))))
         .child(button("file-reload", this.discardArmed ? "Discard & reload" : "Reload", cx => this.reload(cx)))))
       .when(Boolean(this.error) && Boolean(this.editor), el => el.child(div().px(12).py(8).text_size(12).text_color(t.ansi1).child(this.error)))
       .when(Boolean(this.note), el => el.child(div().px(12).py(6).text_size(12).text_color(t.muted).child(this.note)))
+      .when(Boolean(this.search?.visible) && !this.previewMode, el => el.child(this.search.render(cx)))
       .child(this.previewMode ? this.renderPreview() : this.editor ? Editor.new(this.editor).flex_1().min_h(0) : div().p(16).text_color(t.muted).child(this.error || "Loading file…"));
   }
 }

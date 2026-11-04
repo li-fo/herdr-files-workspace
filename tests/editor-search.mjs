@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import { matches, replaceMatches } from '../mods/files-workspace/search-text.js';
+assert.equal(matches('한글\nhello HELLO', 'hello').length, 2);
+assert.equal(matches('한글\nhello HELLO', 'hello', true).length, 1);
+assert.equal(matches('한글\nhello', 'hello')[0].line, 2);
+assert.equal(matches('.* $1 [a]', '.*').length, 1);
+assert.equal(matches('aaa', '').length, 0);
+assert.equal(matches('😀 A\n😀', '😀')[1].start, 5);
+assert.equal(replaceMatches('a a', matches('a a','a'), '$&'), '$& $&');
+assert.equal(replaceMatches('한글\n한글', matches('한글\n한글','한글'), ''), '\n');
+assert.equal(replaceMatches('aaa', matches('aaa','aa'), 'b'), 'ba');
+const read = name => fs.readFileSync(`mods/files-workspace/${name}.js`, 'utf8').replace(/^import .*;$/gm, '').replaceAll('export default class', 'class').replaceAll('export async function', 'async function').replaceAll('export const', 'const');
+const DocSearch = vm.runInNewContext(read('document-search')+'\nDocumentSearch', {matches,replaceMatches});
+let current = 'alpha alpha', changed = 0;
+const doc = {editor:{value:()=>current,set_value:x=>current=x},buffer:{text:current},updateTitle:()=>changed++};
+const search = new DocSearch(doc); search.query={value:()=> 'alpha'}; search.replacement={value:()=> 'beta'};
+search.replace(false,{notify(){}}); assert.equal(current,'beta alpha'); assert.equal(doc.buffer.text,current); assert(doc.draftPending); assert.equal(changed,1);
+search.replace(true,{notify(){}}); assert.equal(current,'beta beta'); assert.equal(search.undo.before,'beta alpha');
+doc.saving=true; current='alpha'; search.replace(true,{notify(){}}); assert.equal(current,'alpha');
+
+console.log('PASS editor search, replacements, draft state and save guard');

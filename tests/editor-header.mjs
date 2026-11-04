@@ -15,7 +15,7 @@ doc.discardArmed=true;doc.publishHeader();assert.equal(values.get('files-workspa
 console.log('PASS targeted header actions, stale-instance rejection, reload confirmation state and deduplicated status updates');
 
 const fresh=new Document();fresh.load=()=>{};
-fresh.init({key:'fresh',file:'/repo/note.md'},{timer:{every(){}},spawn(){}});
+fresh.init({key:'fresh',file:'/repo/note.md'},{focus_handle(){return {};},timer:{every(){}},spawn(){}});
 assert.equal(fresh.markdown,true);assert.equal(fresh.previewMode,false);
 fresh.buffer={text:'unsaved text',dirty:true};fresh.editor={identity:'same-editor'};
 let prepared=0;fresh.preparePreview=()=>prepared++;

@@ -12,6 +12,11 @@ foreach ($key in @('ctrl-s', 'cmd-s')) {
     $section | Add-Member -NotePropertyName $key -NotePropertyValue 'files-workspace.save' -Force
 }
 herdr-app check $source | Out-Host
+foreach ($binding in @(@('ctrl-f', 'find'), @('cmd-f', 'find'), @('ctrl-h', 'replace'), @('cmd-alt-f', 'replace'))) {
+    $key = $binding[0]; $command = 'files-workspace.' + $binding[1]
+    if ($section.$key -and $section.$key -ne $command) { throw "Existing $key binding conflicts; merge keys.json manually." }
+    $section | Add-Member -NotePropertyName $key -NotePropertyValue $command -Force
+}
 if ($LASTEXITCODE -ne 0) { throw 'Source mod check failed.' }
 $backup = Join-Path $AppHome ('backups\files-workspace-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $backup | Out-Null
