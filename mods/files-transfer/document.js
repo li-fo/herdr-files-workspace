@@ -4,6 +4,7 @@ import { theme, settings, nextCommand, shared, run, focused } from "herdr";
 import { TextBuffer } from "./text-buffer.js";
 import { TAB_KEY } from "./file-tabs.js";
 import { loadText, saveText } from "./remote-text.js";
+import { readDraft, persistDraft, restoreDraft } from "./drafts.js";
 
 export function language(file) {
   const name = file.split(/[\\/]/).pop().toLowerCase();
@@ -17,6 +18,8 @@ export default class Document {
     this.error = null;
     this.saving = false;
     this.load(cx);
+    // Do not persist the entire document or redraw all mods on every keystroke.
+    cx.timer.every(1000, () => this.flushDraft());
     cx.spawn(async cx => {
       for (;;) {
         const command = await nextCommand();
@@ -31,14 +34,24 @@ export default class Document {
     this.error = null;
     cx.spawn(async cx => {
       try {
-        const loaded = await loadText(this.info);
-        const buffer = new TextBuffer(loaded.text);
+        let loaded, loadError;
+        try { loaded = await loadText(this.info); }
+        catch (error) { if (!readDraft(this.info.key) || this.discardArmed) throw error; loadError = String(error.message || error); }
+        const restored = this.discardArmed
+          ? { buffer: new TextBuffer(loaded.text), version: loaded.version, note: null }
+          : restoreDraft(this.info.key, loaded);
+        const buffer = restored.buffer;
         const t = theme();
         const editor = EditorState.new({ value: buffer.text, language: language(this.info.file), readonly: false,
           font_family: settings().font_family, font_size: 13,
           syntax: { keyword: t.ansi5, string: t.ansi2, comment: t.dim, function: t.ansi4, type: t.ansi3, number: t.ansi1, constant: t.ansi6 } });
-        this.editor?.release(); this.editor = editor; this.buffer = buffer; this.version = loaded.version;
-        editor.on("change", (_event, cx) => { this.buffer.text = editor.value(); this.discardArmed = false; this.updateTitle(); cx.notify(); });
+        this.editor?.release(); this.editor = editor; this.buffer = buffer; this.version = restored.version;
+        this.note = restored.note; this.error = loadError || null;
+        editor.on("change", (_event, cx) => {
+          this.buffer.text = editor.value(); this.discardArmed = false; this.draftPending = true;
+          this.note = null; this.updateTitle(); cx.notify();
+        });
+        if (this.discardArmed) persistDraft(this.info.key, buffer, this.version);
         this.discardArmed = false;
         this.updateTitle();
       } catch (error) { this.error = String(error.message || error); }
@@ -60,6 +73,7 @@ export default class Document {
         const snapshot = this.buffer.snapshot();
         this.version = await saveText(this.info, snapshot, this.version);
         this.buffer.saved(snapshot); this.discardArmed = false;
+        this.note = null; this.draftPending = true; this.flushDraft();
       } catch (error) { this.error = String(error.message || error); }
       finally { this.saving = false; this.updateTitle(); cx.notify(); }
     });
@@ -68,7 +82,11 @@ export default class Document {
     if (this.buffer?.dirty && !this.discardArmed) { this.discardArmed = true; cx.notify(); return; }
     this.load(cx);
   }
-  close() { this.editor?.release(); }
+  flushDraft() {
+    if (!this.buffer || !this.draftPending) return;
+    persistDraft(this.info.key, this.buffer, this.version); this.draftPending = false;
+  }
+  close() { this.flushDraft(); this.editor?.release(); }
   render(cx) {
     const t = theme();
     const button = (id, label, action) => div().id(id).px(9).py(4).rounded(5).cursor_pointer().hover(s => s.bg(t.hover)).on_click((_e, cx) => action(cx)).child(label);
@@ -80,6 +98,7 @@ export default class Document {
         .when(Boolean(this.buffer), el => el.child(button("file-save", "Save", cx => this.save(cx))))
         .child(button("file-reload", this.discardArmed ? "Discard & reload" : "Reload", cx => this.reload(cx))))
       .when(Boolean(this.error) && Boolean(this.editor), el => el.child(div().px(12).py(8).text_size(12).text_color(t.ansi1).child(this.error)))
+      .when(Boolean(this.note), el => el.child(div().px(12).py(6).text_size(12).text_color(t.muted).child(this.note)))
       .child(this.editor ? Editor.new(this.editor).flex_1().min_h(0) : div().p(16).text_color(t.muted).child(this.error || "Loading file…"));
   }
 }

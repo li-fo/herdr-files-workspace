@@ -1,0 +1,18 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const {TextBuffer}=vm.runInNewContext(fs.readFileSync('mods/files-transfer/text-buffer.js','utf8').replaceAll('export ','')+'\n({TextBuffer})');
+const values=new Map();
+const source=fs.readFileSync('mods/files-transfer/drafts.js','utf8').replace(/^import .*;$/gm,'').replaceAll('export ','');
+const api=vm.runInNewContext(source+'\n({readDraft,persistDraft,restoreDraft})',{TextBuffer,shared:k=>values.get(k),setShared:(k,v)=>values.set(k,v)});
+const b=new TextBuffer('\ufeffhello\r\n');b.text='edited\n';
+api.persistDraft('file',b,'old-version');
+let restored=api.restoreDraft('file',{text:b.baseRaw,version:'old-version'});
+assert.equal(restored.buffer.text,'edited\n');assert(restored.buffer.dirty);assert.equal(restored.version,'old-version');
+restored=api.restoreDraft('file',{text:'external change',version:'new-version'});
+assert.equal(restored.buffer.baseRaw,b.baseRaw);assert.match(restored.note,/changed on disk/);assert.equal(restored.version,'old-version');
+assert.equal(api.restoreDraft('file',undefined).buffer.text,'edited\n');
+restored=api.restoreDraft('file',{text:b.snapshot().raw,version:'saved-version'});
+assert.equal(restored.buffer.dirty,false);assert.equal(api.readDraft('file'),null);
+b.text='more edits';api.persistDraft('file',b,'v');b.saved(b.snapshot());api.persistDraft('file',b,'v2');assert.equal(api.readDraft('file'),null);
+console.log('PASS draft recovery, offline recovery, external-change conflicts, completed-save recovery and clearing saved drafts');
