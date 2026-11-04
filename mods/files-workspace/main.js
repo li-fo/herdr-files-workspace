@@ -829,7 +829,7 @@ export default class Files extends View {
   }
 
   toolbar(action, cx) {
-    if (action === "find") { this.fileSearch ||= new FileSearch(this, directory); this.fileSearch.open(cx); cx.notify(); return; }
+    if (action === "find") { this.fileSearch ||= new FileSearch(this); this.fileSearch.open(cx); cx.notify(); return; }
     if (!this.root) return;
     if (action === "reload") { this.refresh(cx); return; }
     const selected = this.selected;

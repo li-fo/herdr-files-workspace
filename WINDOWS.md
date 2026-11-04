@@ -108,7 +108,7 @@ Search uses literal text. **Aa** controls case sensitivity. The result list show
 The public editor API replaces the whole buffer: it resets the native cursor, scroll position, and undo history. **Undo replace** restores the most recent replacement if the text has not changed since that replacement. It does not restore the earlier native undo history.
 
 Use **Find** in the file panel to search file names and relative paths, including closed subfolders. Select a result to open its workspace tab. Close search to return to the unchanged folder tree. This searches paths, not file contents.
-Git folders use tracked and untracked files, excluding Git-ignored files. Other folders use a bounded scan (100 folders, about 10,000 files), excluding dependency/build folders. Partial scans are labeled. Up to 200 matches are shown; narrow the query to see others. Use the search refresh button to update the file list.
+Git folders use tracked and untracked files, excluding Git-ignored files. Other folders show an explanation without recursive scanning. Plain queries match part of a path. Patterns support `*` and `?`: `*.md` matches file names in all subfolders; `docs/*.md` matches relative paths. Up to 200 matches are shown; narrow the query to see others. The list is cached while the panel instance stays alive; use the search refresh button after file changes.
 
 Search runs locally or through the existing SSH routing. Herdr itself is not modified.
 
