@@ -14,6 +14,8 @@ import { spaces, panes, focused, run, readTextFile, watchFolder, theme, settings
 import { exec, windows, isWindows } from "./windows.js";
 import ICONS from "./icons.js";
 import { downloadDirectory, chooseDownloadDirectory } from "./download-settings.js";
+import { openFile, tabContext } from "./file-tabs.js";
+import Document from "./document.js";
 
 // Right-click menu on a file or folder: download it to ~/Downloads (scp from a remote
 // machine, cp here), paste files copied in Finder into it (upload), copy its path, show it
@@ -206,8 +208,11 @@ const MOVE = '[ -e "$2" ] || [ -L "$2" ] && exit 17; mv -- "$1" "$2"';
 const menuHeight = list => list.reduce((h, it) => h + (it ? MENU_ROW : 9), 10);
 
 function location() {
+  if (props()?.viewer) return { cwd: props().viewer.root, on: props().viewer.on };
   const space = spaces().find(s => s.active), f = focused();
   const pane = f?.pane ? panes().find(p => p.pane === f.pane) : null;
+  const fileTab = pane?.mod === "files-transfer" ? tabContext(pane.tab) : null;
+  if (fileTab) return { cwd: fileTab.root, on: fileTab.on };
   const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
   const cwd = pane?.cwd || f?.cwd || space?.folder;
   return { cwd: !on && isWindows() ? cwd?.replaceAll("\\", "/") : cwd, on };
@@ -254,6 +259,7 @@ async function directory(path, on) {
 
 export default class Files extends View {
   init(_props, cx) {
+    if (props()?.document) { this.document = new Document(); return this.document.init(props().document, cx); }
     if (props()?.ask) return this.initAsk(cx);
     if (props()?.menu || props()?.confirm) { this.at = 0; this.handle = cx.focus_handle(); this.handle.focus(); return; }
     // Which panel a menu choice is for: the one that opened the menu.
@@ -271,6 +277,7 @@ export default class Files extends View {
     cx.timer.every(1000, cx => this.poll(cx));
     this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {};
     this.refresh(cx);
+    if (props()?.viewer) this.show(props().viewer.file.slice(this.root.length + 1), cx);
     cx.timer.every(10000, cx => this.refresh(cx));
   }
 
@@ -755,6 +762,18 @@ export default class Files extends View {
     this.keys?.focus();
   }
 
+  openTab(path, cx) {
+    const space = spaces().find(s => s.active)?.id;
+    if (!space) return;
+    const info = { space, root: this.root, on: this.on || null, file: `${this.root}/${path}` };
+    cx.spawn(async () => {
+      try { await openFile(info); }
+      catch (error) { notify({ title: "Cannot open file", body: String(error.message || error), level: "error" }); }
+    });
+  }
+
+  close() { this.document?.close(); }
+
   rows(prefix, depth, out, t, dark) {
     if (out.length >= TOTAL || depth > 40) return out;
     for (const entry of this.entries.get(prefix) ?? []) {
@@ -762,7 +781,7 @@ export default class Files extends View {
       const path = prefix ? `${prefix}/${entry.name}` : entry.name, open = this.folders.has(path), mark = this.marks[`${this.root}/${path}`];
       out.push(h_flex().id(`file-${path}`).h(28).flex_none().pl(8 + depth * 18).pr(8).gap(7).items_center().rounded(7).cursor_pointer()
         .when(this.selected?.path === path, el => el.bg(t.selected)).hover(s => s.bg(t.hover))
-        .on_click((_e, cx) => { this.select(path, entry.dir); entry.dir ? this.toggle(path, cx) : this.handoff(path, cx) || this.show(path, cx); })
+        .on_click((_e, cx) => { this.select(path, entry.dir); entry.dir ? this.toggle(path, cx) : this.openTab(path, cx); })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.select(path, entry.dir); cx.notify(); this.openMenu(path, entry.dir); })
         .on_drop((e, cx) => { cx.stop_propagation(); this.drop(e.paths, entry.dir ? path : prefix, cx); })
         .child(entry.dir ? svg(`${DIR}/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
@@ -775,6 +794,7 @@ export default class Files extends View {
   }
 
   render(cx) {
+    if (this.document) return this.document.render(cx);
     if (props()?.menu) return this.menu(theme());
     if (props()?.confirm) return this.confirm(theme());
     if (props()?.ask) return this.ask(theme());
