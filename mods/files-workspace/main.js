@@ -1,3 +1,4 @@
+import FileSearch from "./file-search.js";
 import { addGitMark, gitMark } from "./git-marks.js";
 import { relativePath } from "./paths.js";
 // Files Transfer: Herdr's Files panel with VS Code's Material Icon Theme icons and file transfer.
@@ -805,7 +806,7 @@ export default class Files extends View {
     });
   }
 
-  close() { this.document?.close(); }
+  close() { this.document?.close(); this.fileSearch?.close(); }
 
   rows(prefix, depth, out, t, dark) {
     if (out.length >= TOTAL || depth > 40) return out;
@@ -828,6 +829,7 @@ export default class Files extends View {
   }
 
   toolbar(action, cx) {
+    if (action === "find") { this.fileSearch ||= new FileSearch(this, directory); this.fileSearch.open(cx); cx.notify(); return; }
     if (!this.root) return;
     if (action === "reload") { this.refresh(cx); return; }
     const selected = this.selected;
@@ -858,6 +860,7 @@ export default class Files extends View {
       .on_click((_e, cx) => { cx.stop_propagation(); if (enabled) this.toolbar(action, cx); }).child(label);
     return v_flex().id("files").track_focus(this.keys).size_full().min_h(0)
       .on_key_down((e, cx) => {
+        if (e.keystroke === "ctrl-f" || e.keystroke === "cmd-f") { cx.stop_propagation(); this.toolbar("find", cx); return; }
         if (e.keystroke === (isWindows() ? "ctrl-v" : "cmd-v")) { cx.stop_propagation(); this.pasteKey(cx); }
         else if (e.keystroke === "escape" && this.selected) { cx.stop_propagation(); this.selected = null; cx.notify(); }
       })
@@ -877,10 +880,12 @@ export default class Files extends View {
             .on_click((_e, cx) => { this.source = !this.source; cx.notify(); })
             .child(this.source ? T().preview : T().source))))
         .when(!this.file, el => el
+          .child(tool("find", "Find", Boolean(this.root)))
           .child(tool("new", "New", Boolean(this.root)))
           .child(tool("delete", "Delete", Boolean(this.root && this.selected)))
           .child(tool("reload", "Reload", Boolean(this.root) && !this.loading))))
-      .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6)
+      .when(!this.file && Boolean(this.fileSearch?.visible), el => el.child(this.fileSearch.render(cx)))
+      .when(!this.file && !this.fileSearch?.visible, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6)
         .on_mouse_down("left", (_e, cx) => { this.selected = null; this.keys.focus(); cx.notify(); })
         .on_mouse_down("right", () => this.root && this.openMenu("", true))
         .on_drop((e, cx) => this.drop(e.paths, "", cx)).children(this.rows("", 0, [], t, dark))

@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const read = name => fs.readFileSync(`mods/files-workspace/${name}.js`, 'utf8').replace(/^import .*;$/gm, '').replaceAll('export default class', 'class').replaceAll('export async function', 'async function').replaceAll('export const', 'const');
+let gitResult={code:0,stdout:'docs/a.md\0docs/a.md\0한글.md\0'};
+const file = vm.runInNewContext(read('file-search')+'\n({searchPaths,filterPaths})', {exec:async()=>gitResult});
+let result = await file.searchPaths('/repo',null,()=>{throw Error('unexpected fallback')},()=>false);
+assert.deepEqual(Array.from(result.paths),['docs/a.md','한글.md']);
+assert.deepEqual(Array.from(file.filterPaths(result.paths,'DOCS\\A')),['docs/a.md']);
+assert.equal(await file.searchPaths('/repo',null,()=>{},()=>true),null);
+gitResult={code:1};
+result=await file.searchPaths('/repo',null,async path=>path==='/repo'?[{name:'docs',dir:true},{name:'node_modules',dir:true},{name:'root.txt',dir:false}]:[{name:'nested.md',dir:false}],()=>false);
+assert.deepEqual(Array.from(result.paths),['docs/nested.md','root.txt']);
+console.log('PASS Git deduplication, path filtering, cancellation and folder fallback');
