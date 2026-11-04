@@ -12,12 +12,14 @@ import { relativePath } from "./paths.js";
 // English/Russian text.
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState, TextView, InputState, Input } from "gpui-base";
-import { spaces, panes, focused, run, readTextFile, watchFolder, theme, settings, window, props, openOverlay, closeOverlay, shared, setShared, notify, hc, appHome, home } from "herdr";
+import { spaces, panes, focused, run, readTextFile, watchFolder, theme, settings, window, props, openOverlay, closeOverlay, shared, setShared, notify, appHome, home } from "herdr";
 import { exec, windows, isWindows } from "./windows.js";
 import ICONS from "./icons.js";
-import { downloadDirectory, chooseDownloadDirectory } from "./download-settings.js";
+import { downloadDirectory } from "./download-settings.js";
 import { openFile, tabContext } from "./file-tabs.js";
 import Document from "./document.js";
+import TransferQueue from "./transfer-queue.js";
+import { directory, sshTarget } from "./file-operations.js";
 
 // Right-click menu on a file or folder: download it to ~/Downloads (scp from a remote
 // machine, cp here), paste files copied in Finder into it (upload), copy its path, show it
@@ -30,58 +32,6 @@ const LANG_KEY = "files-workspace.lang";
 const MENU_ROW = 31;
 // Our temporary folders, never listed in the tree.
 const TEMP = /^\.herdr-(upload|download)\./;
-// Runs detached so a download isn't bound by exec's 30 s. It fetches into a hidden
-// temporary folder next to the target, then claims a free name atomically ("a (1).txt")
-// and writes that path to <status>.dest and the exit code to <status>.
-const FETCH = `src=$1 dir=$2 name=$3 st=$4 mode=$5 isdir=$6
-mkdir -p "$dir" "\${st%/*}" || exit 1
-rm -f "$st" "$st.dest"
-tmp=$(mktemp -d "$dir/.herdr-download.XXXXXX") || exit 1
-nohup sh -c '
-mode=$1 src=$2 tmp=$3 dir=$4 name=$5 isdir=$6 st=$7
-if [ "$mode" = scp ]; then scp -r -p -o BatchMode=yes -o ConnectTimeout=15 "$src" "$tmp/$name"; else cp -R -p "$src" "$tmp/$name"; fi >"$st.log" 2>&1
-code=$?
-if [ $code = 0 ]; then
-  base=$name ext=
-  if [ "$isdir" != 1 ]; then case "$name" in ?*.*) base=\${name%.*} ext=.\${name##*.};; esac; fi
-  dest="$dir/$name" i=0
-  if [ "$isdir" = 1 ]; then
-    while ! mkdir "$dest" 2>/dev/null; do [ -e "$dest" ] || { code=1; break; }; i=$((i+1)); dest="$dir/$base ($i)$ext"; done
-    if [ $code = 0 ]; then (cd "$tmp/$name" && for f in * .[!.]* ..?*; do if [ -e "$f" ] || [ -L "$f" ]; then mv "$f" "$dest/" || exit 1; fi; done) || code=1; fi
-  else
-    while ! ln "$tmp/$name" "$dest" 2>/dev/null; do [ -e "$dest" ] || { code=1; break; }; i=$((i+1)); dest="$dir/$base ($i)$ext"; done
-  fi
-  [ $code = 0 ] && printf %s "$dest" >"$st.dest"
-fi
-rm -rf "$tmp"
-echo $code >"$st"' fetch "$mode" "$src" "$tmp" "$dir" "$name" "$isdir" "$st" </dev/null >/dev/null 2>&1 &`;
-
-// Upload, detached like FETCH: copies local files into a temporary folder on the target
-// (made beforehand with mktemp there) and writes the exit code to <status>.
-const SEND = `st=$1 mode=$2 dest=$3; shift 3
-mkdir -p "\${st%/*}" || exit 1
-rm -f "$st"
-nohup sh -c 'st=$1 mode=$2 dest=$3; shift 3
-if [ "$mode" = scp ]; then scp -r -p -o BatchMode=yes -o ConnectTimeout=15 "$@" "$dest"; else cp -R -p "$@" "$dest"; fi >"$st.log" 2>&1
-echo $? >"$st"' send "$st" "$mode" "$dest" "$@" </dev/null >/dev/null 2>&1 &`;
-
-// Runs on the target machine once an upload is in: moves each uploaded item from the
-// temporary folder into place under a free name, prints the names it used, removes the folder.
-const PLACE = `tmp=$1 dir=$2
-for p in "$tmp"/* "$tmp"/.[!.]* "$tmp"/..?*; do
-  [ -e "$p" ] || [ -L "$p" ] || continue
-  name=\${p##*/} base=\${p##*/} ext= i=0 dest="$dir/\${p##*/}"
-  if [ -d "$p" ] && [ ! -L "$p" ]; then
-    while ! mkdir "$dest" 2>/dev/null; do [ -e "$dest" ] || exit 1; i=$((i+1)); dest="$dir/$name ($i)"; done
-    (cd "$p" && for f in * .[!.]* ..?*; do if [ -e "$f" ] || [ -L "$f" ]; then mv "$f" "$dest/" || exit 1; fi; done) || exit 1
-  else
-    case "$name" in ?*.*) base=\${name%.*} ext=.\${name##*.};; esac
-    while ! ln "$p" "$dest" 2>/dev/null; do [ -e "$dest" ] || exit 1; i=$((i+1)); dest="$dir/$base ($i)$ext"; done
-  fi
-  printf '%s\\n' "\${dest##*/}"
-done
-rm -rf "$tmp"`;
-
 // Files copied in Finder (⌘C): their paths, from the general pasteboard.
 const CLIPBOARD = `ObjC.import("AppKit");
 const urls = $.NSPasteboard.generalPasteboard.readObjectsForClassesOptions($.NSArray.arrayWithObject($.NSURL),
@@ -89,14 +39,6 @@ const urls = $.NSPasteboard.generalPasteboard.readObjectsForClassesOptions($.NSA
 const out = [];
 if (urls) for (let i = 0; i < urls.count; i++) out.push(urls.objectAtIndex(i).path.js);
 JSON.stringify(out);`;
-
-// The ssh target behind a Herdr machine name (hc machine ls: "dev@host" or an ssh-config alias).
-async function sshTarget(machine) {
-  const r = await hc(["machine", "ls", "--json"]);
-  const m = JSON.parse(r.stdout || "{}").machines?.find(x => x.name === machine);
-  if (!m?.target) throw new Error(`No ssh address for machine ${machine}`);
-  return m.target;
-}
 
 // Interface text: Russian when macOS is set to Russian, else English (see init).
 const STRINGS = {
@@ -263,21 +205,6 @@ function icon(path, dir, open, dark) {
   return `${DIR}/icons/${id ?? ICONS.file}.svg`;
 }
 
-async function directory(path, on) {
-  if (!on && window()?.platform === "windows") {
-    const r = await windows("list", [path]);
-    if (r.code !== 0) throw new Error(r.stderr || "Cannot list this folder");
-    const result = JSON.parse(r.stdout || "[]");
-    return Array.isArray(result) ? result : [result];
-  }
-  const script = 'n=0; for p in "$1"/* "$1"/.[!.]* "$1"/..?*; do [ -e "$p" ] || [ -L "$p" ] || continue; name=${p##*/}; [ "$name" = .git ] && continue; if [ -d "$p" ] && [ ! -L "$p" ]; then kind=d; else kind=f; fi; printf "%s\\0%s\\0" "$kind" "$name"; n=$((n+1)); [ "$n" -gt 500 ] && break; done; test -d "$1"';
-  const r = await exec("sh", ["-c", script, "files", path], { on });
-  if (r.code !== 0) throw new Error(r.stderr || "Cannot list this folder");
-  const fields = r.stdout.split("\0"), out = [];
-  for (let i = 0; i + 1 < fields.length; i += 2) out.push({ name: fields[i + 1], dir: fields[i] === "d" });
-  return out;
-}
-
 export default class Files extends View {
   init(_props, cx) {
     if (props()?.document) { this.document = new Document(); return this.document.init(props().document, cx); }
@@ -285,7 +212,7 @@ export default class Files extends View {
     if (props()?.menu || props()?.confirm) { this.at = 0; this.handle = cx.focus_handle(); this.handle.focus(); return; }
     // Which panel a menu choice is for: the one that opened the menu.
     this.me = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-    this.jobs = [];
+    this.transfers = new TransferQueue(T, cx => this.refresh(cx));
     // ⌘V pastes into the selected row's folder: the panel takes the keyboard when clicked.
     this.keys = cx.focus_handle();
     exec("sh", ["-c", 'mkdir -p "$1" && find "$1" -mindepth 1 -mmin +60 -delete', "clean", `${appHome()}/${PREVIEW_DIR}`]).catch(() => {});
@@ -609,78 +536,10 @@ export default class Files extends View {
     this.selected = { path: rel, dir };
   }
 
-  async download(path, name, dir, on, choose = false) {
-    // Cancel before resolving a remote or starting a worker. Herdr persists the selection.
-    const selected = choose ? await chooseDownloadDirectory(T().chooseDownload) : downloadDirectory();
-    if (choose && !selected) return;
-    // An empty Windows destination selects the actual Windows Downloads known folder.
-    const destination = selected ?? (isWindows() ? "" : `${home()}/Downloads`);
-    const src = on ? `${await sshTarget(on)}:${path}` : path;
-    const status = `${appHome()}/data/files-workspace/${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const r = await exec("sh", ["-c", FETCH, "fetch", src, destination, name, status, on ? "scp" : "cp", dir ? "1" : "0"]);
-    if (r.code !== 0) throw new Error((r.stderr || `exit ${r.code}`).trim());
-    this.jobs.push({ kind: "download", status, name, destination });
-  }
-
-  // Local files into dir on the shown folder's machine: into a temporary folder there
-  // first, then into place under free names (PLACE), so nothing is overwritten.
-  async upload(files, dir, on) {
-    if (isWindows()) files = files.map(p => p.replaceAll("\\", "/"));
-    const mk = await exec("mktemp", ["-d", `${dir}/.herdr-upload.XXXXXX`], { on });
-    if (mk.code !== 0) throw new Error((mk.stderr || `exit ${mk.code}`).trim());
-    const tmp = mk.stdout.trim();
-    const dest = on ? `${await sshTarget(on)}:${tmp}/` : `${tmp}/`;
-    const status = `${appHome()}/data/files-workspace/${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const r = await exec("sh", ["-c", SEND, "send", status, on ? "scp" : "cp", dest, ...files]);
-    if (r.code !== 0) {
-      await exec("rm", ["-rf", "--", tmp], { on }).catch(() => {});
-      throw new Error((r.stderr || `exit ${r.code}`).trim());
-    }
-    const name = files.length === 1 ? files[0].split("/").pop() : T().items(files.length);
-    this.jobs.push({ kind: "upload", status, name, tmp, dir, on });
-  }
-
-  // Finished transfers write their exit code to the status file.
-  poll(cx) {
-    if (!this.jobs?.length || this.polling) return;
-    this.polling = true;
-    cx.spawn(async cx => {
-      try {
-      let changed = false;
-      for (const job of [...this.jobs]) {
-        const code = await readTextFile(job.status).catch(() => null);
-        if (code === null) continue;
-        this.jobs = this.jobs.filter(j => j !== job);
-        changed = true;
-        const ok = code.trim() === "0";
-        const log = (await readTextFile(`${job.status}.log`).catch(() => null))?.trim();
-        const fail = log?.split("\n").pop() || T().code(code.trim());
-        if (job.kind === "download") {
-          const dest = (await readTextFile(`${job.status}.dest`).catch(() => null)) || `${job.destination || `${home()}/Downloads`}/${job.name}`;
-          if (ok) notify({ title: T().downloaded(dest.split(/[\\/]/).pop()), body: dest.replace(home(), "~"), level: "success", timeout: 6000 });
-          else notify({ title: T().downloadFailed(job.name), body: fail, level: "error" });
-        } else {
-          let placed = false;
-          try {
-            if (!ok) throw new Error(fail);
-            const r = await exec("sh", ["-c", PLACE, "place", job.tmp, job.dir], { on: job.on });
-            if (r.code !== 0) throw new Error((r.stderr || `exit ${r.code}`).trim());
-            placed = true;
-            const names = r.stdout.trim().split("\n").filter(Boolean);
-            notify({ title: T().uploaded(names.length === 1 ? names[0] : T().items(names.length)),
-              body: job.on ? `${job.on}:${job.dir}` : job.dir.replace(home(), "~"), level: "success", timeout: 6000 });
-          } catch (e) {
-            notify({ title: T().uploadFailed(job.name), body: String(e.message ?? e) + (ok ? `\nStaged files kept at ${job.tmp}` : ""), level: "error" });
-          }
-          if (placed || !ok) await exec("rm", ["-rf", "--", job.tmp], { on: job.on }).catch(() => {});
-          this.refresh(cx);
-        }
-        await exec("rm", ["-f", job.status, `${job.status}.log`, `${job.status}.dest`]).catch(() => {});
-      }
-      if (changed) cx.notify();
-      } finally { this.polling = false; }
-    });
-  }
+  get jobs() { return this.transfers?.jobs || []; }
+  download(...args) { return this.transfers.download(...args); }
+  upload(...args) { return this.transfers.upload(...args); }
+  poll(cx) { this.transfers?.poll(cx); }
 
   // Files dragged in from Finder: uploaded into dir (a folder inside the shown one, "" for it).
   drop(paths, dir, cx) {

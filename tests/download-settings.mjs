@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-// Exercise the actual panel download method with Herdr's UI/process boundary mocked.
+// Exercise the actual transfer queue with Herdr's UI/process boundary mocked.
 const values = new Map(), transfers = [];
 let picked = null, pickerCalls = 0, remoteCalls = 0;
 const shared = key => values.get(key);
@@ -23,24 +23,30 @@ const context = vm.createContext({
   exec:async (...args)=>{transfers.push(args);return {code:0,stdout:'',stderr:''};},
   hc:async ()=>{remoteCalls++;return {stdout:JSON.stringify({machines:[{name:'server',target:'host'}]})};}
 });
+const operations = fs.readFileSync('mods/files-workspace/file-operations.js','utf8').replace(/^import .*;$/gm,'').replaceAll('export ', '');
+context.windows = async (action, args) => { transfers.push([action,args]); return {code:0,stdout:'',stderr:''}; };
+Object.assign(context, vm.runInContext(operations+'\n({sshTarget,startDownload,startUpload,placeUpload})',context));
+const queueSource = fs.readFileSync('mods/files-workspace/transfer-queue.js','utf8').replace(/^import .*;$/gm,'').replace('export default class', 'class');
+const TransferQueue = vm.runInContext(queueSource+'\nTransferQueue', context);
+context.TransferQueue = TransferQueue;
 const {Files,MENU,STRINGS} = vm.runInContext(source+'\n({Files,MENU,STRINGS})',context);
 const target={dir:false,on:null};
 assert.equal(MENU(target,STRINGS.en)[0][1],'Download to Downloads');
 assert.equal(MENU(target,STRINGS.en)[1][1],'Download to…');
-const panel = new Files();panel.jobs=[];
+const panel = new Files();panel.transfers=new TransferQueue(()=>STRINGS.en,()=>{});
 await panel.download('C:/source/a.txt','a.txt',false,'server',true);
 assert.equal(transfers.length,0);assert.equal(remoteCalls,0);assert.equal(settings.downloadDirectory(),null);
 picked="F:\\받은 파일 ' [test]";
 await panel.download('C:/source/a.txt','a.txt',false,null,true);
-assert.equal(transfers.at(-1)[1][4],picked);
+assert.equal(transfers.at(-1)[1][1],picked);
 assert.equal(panel.jobs[0].destination,picked);
 assert.equal(loadSettings().downloadDirectory(),picked); // New module/panel reads persisted shared value.
 assert.equal(MENU(target,STRINGS.en)[0][1],`Download to ${picked}`);
 assert.equal(MENU({...target,dir:true},STRINGS.en)[0][1],`Download to ${picked}`);
 const calls=pickerCalls;
 await panel.download('/tmp/a.txt','a.txt',false,'server');
-assert.equal(pickerCalls,calls);assert.equal(transfers.at(-1)[1][4],picked);
-assert.equal(transfers.at(-1)[1][3],'host:/tmp/a.txt');
+assert.equal(pickerCalls,calls);assert.equal(transfers.at(-1)[1][1],picked);
+assert.equal(transfers.at(-1)[1][0],'host:/tmp/a.txt');
 const before=transfers.length, last=picked;
 picked=null;
 await panel.download('C:/source/a.txt','a.txt',false,null,true);
@@ -49,5 +55,5 @@ picked='F:\\Other';await panel.download('C:/source/a.txt','a.txt',false,null,tru
 assert.equal(panel.jobs[0].destination,last); // In-flight jobs never follow later preference changes.
 values.clear();
 await panel.download('C:/source/a.txt','a.txt',false,null);
-assert.equal(transfers.at(-1)[1][4],''); // Windows resolves its real Downloads known folder.
+assert.equal(transfers.at(-1)[1][1],''); // Windows resolves its real Downloads known folder.
 console.log('PASS menu labels, picker cancellation, remembered path across panel loads, quick download, remote routing and in-flight destination snapshot');

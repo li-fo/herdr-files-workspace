@@ -35,7 +35,7 @@ const text='synthetic remote round trip 한글\n';
 const name=`herdr-port-${Date.now()} 한글 ' [a].txt`;
 const file=path.join(root,name);fs.writeFileSync(file,text);
 const folder=path.join(root,"folder ' [1]");fs.mkdirSync(folder);fs.writeFileSync(path.join(folder,'.hidden'),'hidden');
-const placeCode=fs.readFileSync('mods/files-workspace/main.js','utf8').match(/const PLACE = `[\s\S]*?`;/)[0];
+const placeCode=fs.readFileSync('mods/files-workspace/file-operations.js','utf8').match(/const PLACE = `[\s\S]*?`;/)[0];
 const place=vm.runInNewContext(placeCode+'\nPLACE');
 const downloads=[];
 try{
