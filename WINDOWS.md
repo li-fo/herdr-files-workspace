@@ -12,7 +12,57 @@ The port adds `windows.js` and `windows.ps1`, using Windows PowerShell 5.1 and O
 
 Transfers run in hidden worker processes. The UI polls their completion files. The mod reads the folder on screen and may execute local/remote commands; network traffic is SSH/SFTP to the selected Herdr machine. It does not upload files to a third-party service.
 
-## Verification
+## Lightweight editor
+
+Clicking a file opens a reusable tab in its Space. Text files use Herdr's native
+editor with extension-based syntax highlighting, line numbers, Save and Ctrl+S.
+There is no completion, language server, debugger or Markdown toolbar. Images
+open in viewer tabs. Unsupported syntax falls back to plain text.
+
+Editing supports UTF-8 text up to 1 MiB, preserving BOM and uniform LF/CRLF.
+Binary files, other encodings and mixed/CR-only line endings are rejected.
+Remote editing requires Python 3 and SSH/SCP. Saving checks the original file
+before replacing it; external changes produce an error and preserve your edits.
+Reload requires a second click to discard modified text.
+
+Unsaved drafts are stored locally in Herdr shared state approximately once per
+second and on normal tab close. Reopening the file restores its draft. Forced
+termination can lose recent typing. Remote drafts also reside on this computer.
+
+Install all files from `mods/files-transfer/`. Merge the `mod:files-transfer`
+section of this repository's `keys.json` into your Herdr `keys.json`, preserving
+other sections. Back up both the installed mod and keys before updating.
+
+### Feature commits and rollback
+
+| Commit | Feature |
+| --- | --- |
+| `3124810` | Open files in Space tabs |
+| `e1f549c` | Local text editing, highlighting and explicit save |
+| `82e297d` | Remote text loading and saving |
+| `9147ce2` | Unsaved draft recovery |
+
+Use `git revert <commit>` to retain history. These features build on each other:
+when removing a lower layer, revert dependent commits first, newest first.
+To remove the complete editor feature set:
+
+```powershell
+git revert 9147ce2 82e297d e1f549c 3124810
+```
+
+Reinstall the resulting mod files to apply a rollback to Herdr. Git changes alone
+do not update the installed copy. Restore the backed-up keys if removing editing.
+
+## Editor verification
+
+```powershell
+node tests/file-tabs.mjs
+node tests/text-buffer.mjs
+node tests/drafts.mjs
+node tests/remote-editor.mjs dgx01
+```
+
+## Transfer verification
 
 ```powershell
 node tests/windows.mjs
