@@ -35,7 +35,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Header check failed.' }
 if (Test-Path -LiteralPath $headerTarget) { Copy-Item -LiteralPath $headerTarget -Destination $backup -Recurse }
 New-Item -ItemType Directory -Path $headerTarget -Force | Out-Null
 Get-ChildItem -LiteralPath $headerSource | Copy-Item -Destination $headerTarget -Recurse -Force
-$layoutPath = Join-Path $AppHome 'layouts\main-files-workspace-windows.json'
+$layoutPath = Join-Path $AppHome 'layouts\files-workspace.json'
 if (Test-Path -LiteralPath $layoutPath) {
     Copy-Item -LiteralPath $layoutPath -Destination $backup
     $layout = Get-Content -LiteralPath $layoutPath -Raw | ConvertFrom-Json

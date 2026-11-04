@@ -50,7 +50,7 @@ lose recent typing. Reload asks for a second click before discarding edits.
 ## Module identifiers
 
 The modules are `files-workspace` and `files-workspace-header`; the custom Windows
-layout is `main-files-workspace-windows`. This is a fresh installation namespace:
+layout is `files-workspace`. This is a fresh installation namespace:
 old Files Transfer tabs, drafts and settings are not migrated. Close the old file
 tabs before switching. Source files on local or remote disks are unaffected.
 

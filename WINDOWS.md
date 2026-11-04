@@ -2,13 +2,13 @@
 
 Installed mod: `C:\Users\pgh\.config\herdr-app\mods\files-workspace`
 
-Active layout: `main-files-workspace-windows`, cloned from `main`. The original layout is preserved.
+Active layout: `files-workspace`, cloned from `main`. The original layout is preserved.
 
 Install/update on Windows with `powershell -NoProfile -File .\install-windows.ps1`.
 It backs up the installed mod and keys, checks the mod, and merges scoped Save
 shortcuts. Conflicting shortcuts are reported before changes. It preserves the
 current layout and does not install Preview Plus. For a first installation, clone
-`main` using `herdr-app do layout.clone --name main --as main-files-workspace-windows`,
+`main` using `herdr-app do layout.clone --name main --as files-workspace`,
 then change that clone's Files block from `"mod": "files"` to `"mod": "files-workspace"`.
 
 Expanded folders and selected files survive file-tab transitions and returning
@@ -17,7 +17,7 @@ in-memory; restarting/reloading the mod can reset them.
 
 The companion `files-workspace-header` displays the full local/SSH file path in
 the pane's top header. The Windows installer connects it in the custom
-`main-files-workspace-windows` layout and backs up the previous layout. Other
+`files-workspace` layout and backs up the previous layout. Other
 layouts can use it by changing their pane header's `content.mod` from `pane` to
 `files-workspace-header`; the shipped `pane` mod remains unchanged. Modified/Saving status and Save/Reload controls also appear in the header. Without the companion header the editor shows its path
 in the original location.
