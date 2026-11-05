@@ -13,10 +13,11 @@ Preview Markdown tables and Mermaid diagrams. Zoom and drag a diagram to inspect
 Start Herdr. Give your coding agent this instruction:
 
 ```text
-Read ~/.config/herdr-app/AGENTS.md, then install Files Workspace: https://github.com/li-fo/herdr-files-workspace
+Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/li-fo/herdr-files-workspace
 ```
 
-Use **Herdr 0.1.13 or later** on Windows.
+Use **Herdr 0.1.13 or later** on Windows. macOS and Linux installation is not supported by this guide.
+The installer creates the `files-workspace` layout and connects both mods and their shortcuts.
 The agent needs Git to clone the public repository.
 For manual installation, updates, and other requirements, see [WINDOWS.md](WINDOWS.md#manual-installation).
 

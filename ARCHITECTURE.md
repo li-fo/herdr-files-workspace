@@ -36,6 +36,9 @@ files before you use an API. Run `codegraph sync` after code changes.
 ## Installation
 
 `install-windows.ps1` checks both source mods before it changes installed files.
+It creates a custom layout from `main` when needed, connects both mods, and
+activates the layout after installation unless `-NoActivate` is set.
+It skips unchanged mod files and retries temporary file locks.
 It backs up each affected file and writes `restore.json` in the backup folder.
 It copies dependencies before entry points and checks both installed mods.
 If installation fails, it restores the affected files.

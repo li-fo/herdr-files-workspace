@@ -25,23 +25,35 @@ For the first installation, open PowerShell and run:
 ```powershell
 git clone https://github.com/li-fo/herdr-files-workspace.git
 cd herdr-files-workspace
-herdr-app do layout.clone --name main --as files-workspace
-```
-
-If the `files-workspace` layout already exists, keep it. Do not clone it again.
-In `~/.config/herdr-app/layouts/files-workspace.json`, change the Files block
-from `"mod": "files"` to `"mod": "files-workspace"`. Keep the other blocks.
-Then run:
-
-```powershell
 powershell -NoProfile -File .\install-windows.ps1
-herdr-app do layout.switch --name files-workspace
 ```
+
+The installer copies the shipped `main` layout to `files-workspace` on the first
+installation. It connects the Files block and companion pane header, then
+switches to that layout. An existing `files-workspace` layout is updated in place;
+its other blocks and custom colors are preserved. The shipped `main` stays unchanged.
+If a custom layout lacks a Files block or pane header, installation stops before
+changing files and reports the missing structure.
+
+Use `-NoActivate` to install without switching the active layout. Use `-AppHome`
+for a custom app folder. By default, the installer uses `HERDR_APP_HOME` when set.
 
 The installer backs up affected files, checks both mods, and adds scoped
 Save, Find, and Replace shortcuts. It connects the companion header in the
 custom layout. It preserves other layouts and does not install Preview Plus.
 Use this PowerShell installer on Windows, not the older `install.sh` script.
+The shell script is a legacy installer. It does not install the full current
+workspace. macOS and Linux installation is not supported by this guide.
+
+Unchanged mod files are not copied again. Sharing violations are retried for
+up to about five seconds per file, including during rollback. Other errors stop
+the operation. If a lock persists, let the current file operation finish and rerun
+the installer. It reports the backup folder if recovery needs attention.
+
+After installation, run `herdr-app status`. Confirm that the active layout is
+`files-workspace` and the error list is empty. Open a text file from the Files
+panel and confirm that its tab, Save control, and Find control appear.
+Mermaid diagrams also require Node.js. The installer does not install dependencies.
 
 ## Update
 
