@@ -1,6 +1,6 @@
 # Herdr Files Workspace — Windows
 
-Installed mod: `C:\Users\pgh\.config\herdr-app\mods\files-workspace`
+Installed mod: `~/.config/herdr-app/mods/files-workspace`
 
 Active layout: `files-workspace`, cloned from `main`. The original layout is preserved.
 
@@ -9,18 +9,56 @@ removes the previous `#6699cc55` selection override and uses the theme default.
 It preserves any different selection color that you configured. Use Herdr
 0.1.13 or later with this installer.
 
-Install/update on Windows with `powershell -NoProfile -File .\install-windows.ps1`.
-It backs up the installed mod and keys, checks the mod, and merges scoped Save
-shortcuts. Conflicting shortcuts are reported before changes. It preserves the
-current layout and does not install Preview Plus. For a first installation, clone
-`main` using `herdr-app do layout.clone --name main --as files-workspace`,
-then change that clone's Files block from `"mod": "files"` to `"mod": "files-workspace"`.
+## Manual installation
+
+Requirements:
+
+- Herdr 0.1.13 or later, started at least once.
+- Git access to this private repository.
+- Windows PowerShell 5.1 and OpenSSH SCP for file operations.
+- Local Node.js for Mermaid previews. Plain Markdown does not require Node.js.
+- SSH access without password prompts for remote transfers.
+- Python 3 on the remote POSIX machine for remote text editing.
+
+For the first installation, open PowerShell and run:
+
+```powershell
+git clone git@github.com:li-fo/herdr-files-workspace-pr.git
+cd herdr-files-workspace-pr
+herdr-app do layout.clone --name main --as files-workspace
+```
+
+If the `files-workspace` layout already exists, keep it. Do not clone it again.
+In `~/.config/herdr-app/layouts/files-workspace.json`, change the Files block
+from `"mod": "files"` to `"mod": "files-workspace"`. Keep the other blocks.
+Then run:
+
+```powershell
+powershell -NoProfile -File .\install-windows.ps1
+herdr-app do layout.switch --name files-workspace
+```
+
+The installer backs up affected files, checks both mods, and adds scoped
+Save, Find, and Replace shortcuts. It connects the companion header in the
+custom layout. It preserves other layouts and does not install Preview Plus.
+Use this PowerShell installer on Windows, not the older `install.sh` script.
+
+## Update
+
+Open PowerShell in the existing repository folder and run:
+
+```powershell
+git pull --ff-only
+powershell -NoProfile -File .\install-windows.ps1
+```
+
+## File panel and transfers
 
 Expanded folders and selected files survive file-tab transitions and returning
 to previously browsed roots within the running panel. These tree states are
 in-memory; restarting/reloading the mod can reset them.
 
-The companion `files-workspace-header` displays the full local/SSH file path in
+The companion `files-workspace-header` displays the relative file path in
 the pane's top header. The Windows installer connects it in the custom
 `files-workspace` layout and backs up the previous layout. Other
 layouts can use it by changing their pane header's `content.mod` from `pane` to
