@@ -31,8 +31,9 @@ if (Test-Path -LiteralPath $layoutPath) {
         foreach ($child in $node.children) { Update-FileHeader $child }
     }
     Update-FileHeader $layout
-    if (!$layout.colors) { $layout | Add-Member -NotePropertyName colors -NotePropertyValue ([pscustomobject]@{}) }
-    $layout.colors | Add-Member -NotePropertyName selection -NotePropertyValue '#6699cc55' -Force
+    # Herdr 0.1.13 paints selection behind text. Retire only our old workaround;
+    # preserve any selection color the user chose instead.
+    if ($layout.colors.selection -eq '#6699cc55') { $layout.colors.PSObject.Properties.Remove('selection') }
 }
 
 $manifestPath = Join-Path $AppHome 'data\files-workspace\install-manifest.json'

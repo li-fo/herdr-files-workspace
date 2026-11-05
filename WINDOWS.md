@@ -4,10 +4,10 @@ Installed mod: `C:\Users\pgh\.config\herdr-app\mods\files-workspace`
 
 Active layout: `files-workspace`, cloned from `main`. The original layout is preserved.
 
-The custom layout uses a translucent selection color (`#6699cc55`). Herdr's
-native text-selection layer draws above glyphs; transparency keeps selected
-Markdown readable in light and dark themes. This also affects other selection
-highlights in this layout. Other theme colors are preserved.
+Herdr 0.1.13 fixes text selection painting in Markdown previews. The installer
+removes the previous `#6699cc55` selection override and uses the theme default.
+It preserves any different selection color that you configured. Use Herdr
+0.1.13 or later with this installer.
 
 Install/update on Windows with `powershell -NoProfile -File .\install-windows.ps1`.
 It backs up the installed mod and keys, checks the mod, and merges scoped Save
