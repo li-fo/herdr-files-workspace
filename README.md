@@ -3,16 +3,21 @@
 Herdr Files Workspace is a mod for [Herdr](https://github.com/herdrdev/herdr-app).
 Use it to browse, edit, preview, and transfer local files and files on remote POSIX machines through SSH.
 
+![Files Workspace with a document tab, Markdown preview, Mermaid zoom controls, and a project file tree](docs/images/files-workspace-preview.png)
+
+Keep your project files beside your document tabs.
+Preview Markdown tables and Mermaid diagrams. Zoom and drag a diagram to inspect its details.
+
 ## Install
 
 Start Herdr. Give your coding agent this instruction:
 
 ```text
-Read ~/.config/herdr-app/AGENTS.md, then install Files Workspace: https://github.com/li-fo/herdr-files-workspace-pr
+Read ~/.config/herdr-app/AGENTS.md, then install Files Workspace: https://github.com/li-fo/herdr-files-workspace
 ```
 
 Use **Herdr 0.1.13 or later** on Windows.
-The agent needs Git access to this private repository.
+The agent needs Git to clone the public repository.
 For manual installation, updates, and other requirements, see [WINDOWS.md](WINDOWS.md#manual-installation).
 
 ## Features

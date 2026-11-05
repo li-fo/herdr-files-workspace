@@ -14,7 +14,7 @@ It preserves any different selection color that you configured. Use Herdr
 Requirements:
 
 - Herdr 0.1.13 or later, started at least once.
-- Git access to this private repository.
+- Git to clone the public repository.
 - Windows PowerShell 5.1 and OpenSSH SCP for file operations.
 - Local Node.js for Mermaid previews. Plain Markdown does not require Node.js.
 - SSH access without password prompts for remote transfers.
@@ -23,8 +23,8 @@ Requirements:
 For the first installation, open PowerShell and run:
 
 ```powershell
-git clone git@github.com:li-fo/herdr-files-workspace-pr.git
-cd herdr-files-workspace-pr
+git clone https://github.com/li-fo/herdr-files-workspace.git
+cd herdr-files-workspace
 herdr-app do layout.clone --name main --as files-workspace
 ```
 
