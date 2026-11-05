@@ -77,6 +77,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install-windows.ps1
 
 ## File panel and transfers
 
+Use **Ctrl+click** to add or remove individual files or folders from the selection.
+Use **Shift+click** to select a range in the visible tree. **Ctrl+Shift+click** adds
+that range to the current selection. These clicks do not open files or toggle folders.
+A normal click selects one item and keeps the existing open/toggle behavior.
+Click empty space or press Escape to clear the selection.
+
+Right-click a selected item to keep the group. The group menu can open selected
+files, download selected items to the remembered folder, copy paths (one per line),
+or delete items after confirmation. Local deletion uses the Recycle Bin; remote
+deletion is permanent. A selected parent folder covers its descendants for transfer
+and deletion, so items are not processed twice. A failed batch stops and reports
+how many items completed. New and paste need a single target.
+
+
 Expanded folders and selected files survive file-tab transitions and returning
 to previously browsed roots within the running panel. These tree states are
 in-memory; restarting/reloading the mod can reset them.

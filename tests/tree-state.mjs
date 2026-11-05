@@ -1,10 +1,11 @@
+import { FileSelection } from "../mods/files-workspace/file-selection.js";
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 const src=fs.readFileSync('mods/files-workspace/main.js','utf8');
 let loc={cwd:'/repo',on:'dgx01'};
 const body=src.slice(src.indexOf('  refresh(cx) {'),src.indexOf('  toggle(path, cx) {'));
-const proto=vm.runInNewContext('class Panel {'+body+'}; Panel.prototype',{location:()=>loc,key:()=>JSON.stringify(loc)});
+const proto=vm.runInNewContext('class Panel {'+body+'}; Panel.prototype',{FileSelection,location:()=>loc,key:()=>JSON.stringify(loc)});
 const panel=Object.assign(Object.create(proto),{treeStates:new Map(),folders:new Set(),show(){},selected:null});
 const cx={spawn(){}};
 panel.refresh(cx); panel.loading=false;

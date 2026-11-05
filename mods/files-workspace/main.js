@@ -1,3 +1,4 @@
+import { FileSelection, visibleFiles, selectionRoots } from "./file-selection.js";
 import { addGitMark, gitMark } from "./git-marks.js";
 import { relativePath } from "./paths.js";
 // Files Transfer: Herdr's Files panel with VS Code's Material Icon Theme icons and file transfer.
@@ -125,7 +126,12 @@ const parentOf = path => {
 };
 
 // A menu row is [action, label, icon]; null draws a divider.
-const MENU = (target, t = T()) => target.newOnly
+const MENU = (target, t = T()) => target.items?.length > 1
+  ? [["open-selected", "Open selected files", "file-plus.svg"],
+     ["download", "Download selected items", "download.svg"],
+     ["copy", "Copy Paths", "copy.svg"], ["copy-relative", "Copy Relative Paths", "copy.svg"], null,
+     ["delete", target.on ? "Delete selected items…" : "Move selected items to Recycle Bin…", "trash.svg"]]
+  : target.newOnly
   ? [["new-file", t.newFile, "file-plus.svg"], ["new-folder", t.newFolder, "folder-plus.svg"]]
   : target.root
   ? [["paste", t.pasteHere, "paste.svg"], ["copy", t.copyPath, "copy.svg"], ["copy-relative", t.copyRelativePath, "copy.svg"], null,
@@ -222,6 +228,7 @@ export default class Files extends View {
       return; // Image tabs do not browse folders, watch them, or poll Git/transfers.
     }
     exec("sh", ["-c", 'mkdir -p "$1" && find "$1" -mindepth 1 -mmin +60 -delete', "clean", `${appHome()}/${PREVIEW_DIR}`]).catch(() => {});
+    this.selection = new FileSelection();
     this.selected = null; // { path, dir } inside the shown folder
     cx.spawn(async cx => {
       const r = await exec("defaults", ["read", "-g", "AppleLanguages"]).catch(() => null);
@@ -248,6 +255,10 @@ export default class Files extends View {
     const on = this.on, root = this.root;
     const entries = (await directory(path ? `${root}/${path}` : root, on)).filter(e => !TEMP.test(e.name));
     if (key() !== context || (path && !this.folders.has(path))) return;
+    for (const previous of this.entries.get(path) || []) {
+      if (!entries.some(entry => entry.name === previous.name && entry.dir === previous.dir)) this.selection?.remove(path ? `${path}/${previous.name}` : previous.name);
+    }
+    if (this.selection && this.selected && !this.selection.items.has(this.selected.path)) this.selected = [...this.selection.items.values()].at(-1) || null;
     const used = [...this.entries.entries()].filter(([p]) => p !== path).reduce((n, [, e]) => n + e.length, 0);
     this.entries.set(path, entries.slice(0, Math.max(0, Math.min(PER_FOLDER, TOTAL - used))).sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name)));
     if (entries.length > PER_FOLDER || used + entries.length > TOTAL) this.limited = true;
@@ -257,10 +268,10 @@ export default class Files extends View {
     if (this.loading) return;
     const { cwd, on } = location(), context = key();
     if (context !== this.context) {
-      if (this.context) this.treeStates.set(this.context, { folders: new Set(this.folders), selected: this.selected });
+      if (this.context) this.treeStates.set(this.context, { folders: new Set(this.folders), selected: this.selected, selection: this.selection });
       const saved = this.treeStates.get(context);
       this.context = context; this.projectRoot = null; this.root = cwd; this.on = on; this.entries = new Map(); this.folders = saved?.folders || new Set();
-      this.pending = new Set(); this.marks = {}; this.selected = saved?.selected || null; this.show(null); this.watched = null; this.error = null; this.limited = false;
+      this.pending = new Set(); this.marks = {}; this.selected = saved?.selected || null; this.selection = saved?.selection || new FileSelection(this.selected ? [this.selected] : []); this.show(null); this.watched = null; this.error = null; this.limited = false;
     }
     if (!cwd) return;
     this.loading = true;
@@ -288,6 +299,8 @@ export default class Files extends View {
 
   toggle(path, cx) {
     if (this.folders.has(path)) {
+      for (const selected of this.selection?.items.keys() || []) if (selected.startsWith(path + "/")) this.selection.remove(selected);
+      if (this.selected?.path.startsWith(path + "/")) this.selected = [...this.selection.items.values()].at(-1) || null;
       for (const folder of [...this.folders]) if (folder === path || folder.startsWith(path + "/")) {
         this.folders.delete(folder);
         this.entries.delete(folder);
@@ -438,6 +451,9 @@ export default class Files extends View {
     const target = path
       ? { path: `${this.root}/${path}`, name: path.split("/").pop(), dir, on: this.on ?? null, from: this.me }
       : { path: this.root, name: this.root.split("/").pop(), dir: true, root: true, on: this.on ?? null, from: this.me };
+    if (path && this.selection?.items.has(path) && this.selection.items.size > 1) {
+      target.items = this.selectedItems(); target.rootPath = this.root;
+    }
     target.relativePath = relativePath(target.path, this.projectRoot || this.root, !this.on && isWindows());
     target.previewStack = props()?.previewStack;
     openOverlay({ mod: "files-workspace", kind: "popup", width: downloadDirectory() ? 460 : 250, height: menuHeight(MENU(target)), props: { menu: target } });
@@ -449,6 +465,7 @@ export default class Files extends View {
     if (!req || req.from !== this.me || req.id === this.lastRequest) return;
     this.lastRequest = req.id;
     setShared(REQUEST, null);
+    if (req.items?.length > 1) { this.takeSelection(req, cx); return; }
     const { action, path, name, dir, on } = req;
     if (action === "preview-plus") { this.handoff(path.slice(this.root.length + 1), cx); return; }
     if (action === "delete") {
@@ -520,6 +537,55 @@ export default class Files extends View {
     });
   }
 
+  takeSelection(req, cx) {
+    if (this.batchBusy || req.rootPath !== this.root || (req.on || null) !== (this.on || null)) return;
+    const items = req.items.filter(item => item.path && !item.path.startsWith("/") && !item.path.includes("\\")
+      && !item.path.split("/").some(part => part === "." || part === ".." || !part));
+    if (items.length !== req.items.length) return;
+    if (req.action === "delete") {
+      openOverlay({mod: "files-workspace", kind: "dialog", width: 480, height: 210,
+        props: {confirm: {...req, name: `${items.length} selected items`, path: req.rootPath, dir: items.some(item => item.dir)}}});
+      return;
+    }
+    if (req.action === "open-selected") {
+      for (const item of items) if (!item.dir) this.openTab(item.path, cx);
+      return;
+    }
+    const root = req.rootPath, on = req.on || null, projectRoot = this.projectRoot || root;
+    this.batchBusy = true;
+    cx.spawn(async cx => {
+      let completed = 0;
+      try {
+        if (req.action === "copy" || req.action === "copy-relative") {
+          const text = items.map(item => req.action === "copy" ? `${root}/${item.path}` : relativePath(`${root}/${item.path}`, projectRoot, !on && isWindows())).join("\n");
+          cx.write_to_clipboard(text);
+          notify({title: T().pathCopied, body: `${items.length} paths`, level: "info"});
+        } else if (req.action === "download" || req.action === "delete-yes") {
+          for (const item of selectionRoots(items)) {
+            const path = `${root}/${item.path}`;
+            if (req.action === "download") await this.download(path, item.path.split("/").pop(), item.dir, on);
+            else {
+              const result = on ? await exec("rm", ["-rf", "--", path], {on}) : await exec("trash", [path]);
+              if (result.code !== 0) throw new Error(result.stderr || `Cannot delete ${path}`);
+              if (this.root === root && (this.on || null) === on) {
+                this.selection.remove(item.path);
+                this.selected = [...this.selection.items.values()].at(-1) || null;
+              }
+            }
+            completed++;
+          }
+          notify({title: req.action === "download" ? "Downloads started" : "Selected items removed", body: `${completed} items`, level: "success"});
+        }
+      } catch (error) {
+        notify({title: T().failed, body: `${completed} items completed. ${String(error.message || error)}`, level: "error"});
+      } finally {
+        this.batchBusy = false;
+        if (req.action === "delete-yes" && this.root === root && (this.on || null) === on) this.refresh(cx);
+        cx.notify();
+      }
+    });
+  }
+
   // Files copied in Finder, uploaded into folder (absolute, on the machine `on`).
   async paste(folder, on) {
     const r = await exec("osascript", ["-l", "JavaScript", "-e", CLIPBOARD]);
@@ -532,6 +598,7 @@ export default class Files extends View {
   // ⌘V: into the selected folder, beside the selected file, else into the shown folder.
   pasteKey(cx) {
     if (!this.root) return;
+    if (this.selection?.items.size > 1) return;
     const sel = this.selected;
     const folder = !sel ? this.root : sel.dir ? `${this.root}/${sel.path}` : parentOf(`${this.root}/${sel.path}`);
     const on = this.on ?? null;
@@ -547,7 +614,7 @@ export default class Files extends View {
     if (!abs.startsWith(`${this.root}/`)) return;
     const rel = abs.slice(this.root.length + 1), parts = rel.split("/");
     for (let i = 1; i < parts.length; i++) this.folders.add(parts.slice(0, i).join("/"));
-    this.selected = { path: rel, dir };
+    this.select(rel, dir);
   }
 
   get jobs() { return this.transfers?.jobs || []; }
@@ -639,7 +706,7 @@ export default class Files extends View {
   confirm(t) {
     const c = props().confirm;
     const yes = () => {
-      setShared(REQUEST, { id: `${Date.now()}-${Math.random()}`, action: "delete-yes", ...c });
+      setShared(REQUEST, { ...c, id: `${Date.now()}-${Math.random()}`, action: "delete-yes" });
       closeOverlay(props().overlay);
     };
     const button = (id, label, bg, fg, border, act) => h_flex().id(id).h(32).px(14).items_center().rounded(8).border_1().border_color(border).bg(bg)
@@ -652,15 +719,22 @@ export default class Files extends View {
         cx.stop_propagation();
       })
       .child(div().font_semibold().text_size(14).text_color(t.foreground).truncate().child(T().askDelete(c.dir, c.name)))
-      .child(div().text_size(12).text_color(t.muted).truncate().child(c.on ? `${c.on}:${c.path}` : c.path))
-      .child(div().text_size(12).text_color(t.dim).child(`${c.on ? `${T().remoteDelete} ` : ""}${T().deleteDetail(c.dir)}`))
+      .child(div().text_size(12).text_color(t.muted).truncate().child(c.items ? c.items.map(item => item.path).join(", ") : c.on ? `${c.on}:${c.path}` : c.path))
+      .child(div().text_size(12).text_color(t.dim).child(c.items && !c.on ? "Move selected items to the Recycle Bin. Selected folders include their contents." : `${c.on ? `${T().remoteDelete} ` : ""}${T().deleteDetail(c.dir)}`))
       .child(h_flex().flex_1().items_end().justify_end().gap(8)
         .child(button("no", T().cancel, t.popover, t.foreground, t.input, () => closeOverlay(props().overlay)))
         .child(button("yes", T().confirmDelete, t.ansi1, t.background, t.ansi1, yes)));
   }
 
-  select(path, dir) {
-    this.selected = { path, dir };
+  selectedItems() {
+    return visibleFiles(this.entries, this.folders).filter(item => this.selection?.items.has(item.path));
+  }
+
+  clearSelection() { this.selection?.clear(); this.selected = null; }
+
+  select(path, dir, modifiers = {}) {
+    this.selection ||= new FileSelection();
+    this.selected = this.selection.click({path, dir}, visibleFiles(this.entries, this.folders), modifiers);
     this.keys?.focus();
   }
 
@@ -687,9 +761,13 @@ export default class Files extends View {
       const path = prefix ? `${prefix}/${entry.name}` : entry.name, open = this.folders.has(path), mark = gitMark(this.marks, `${this.root}/${path}`);
       const markColor = mark === "A" ? t.ansi2 : mark === "D" || mark === "U" ? t.ansi1 : mark === "M" ? t.ansi3 : t.foreground;
       out.push(h_flex().id(`file-${path}`).h(28).flex_none().pl(8 + depth * 18).pr(8).gap(7).items_center().rounded(7).cursor_pointer()
-        .when(this.selected?.path === path, el => el.bg(t.selected)).hover(s => s.bg(t.hover))
-        .on_click((_e, cx) => { this.select(path, entry.dir); entry.dir ? this.toggle(path, cx) : this.openTab(path, cx); })
-        .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.select(path, entry.dir); cx.notify(); this.openMenu(path, entry.dir); })
+        .when(Boolean(this.selection?.items.has(path)), el => el.bg(t.selected)).hover(s => s.bg(t.hover))
+        .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); })
+        .on_click((e, cx) => {
+          cx.stop_propagation(); this.select(path, entry.dir, e.modifiers); cx.notify();
+          if (!e.modifiers?.shift && !e.modifiers?.control && !e.modifiers?.platform) entry.dir ? this.toggle(path, cx) : this.openTab(path, cx);
+        })
+        .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); if (!this.selection?.items.has(path)) this.select(path, entry.dir); cx.notify(); this.openMenu(path, entry.dir); })
         .on_drop((e, cx) => { cx.stop_propagation(); this.drop(e.paths, entry.dir ? path : prefix, cx); })
         .child(entry.dir ? svg(`${DIR}/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
         .child(image(icon(path, entry.dir, open, dark)).size(16).flex_none())
@@ -703,6 +781,11 @@ export default class Files extends View {
   toolbar(action, cx) {
     if (!this.root) return;
     if (action === "reload") { this.refresh(cx); return; }
+    const items = this.selectedItems();
+    if (items.length > 1) {
+      if (action === "delete") this.takeSelection({action: "delete", items, rootPath: this.root, on: this.on || null, from: this.me}, cx);
+      return;
+    }
     const selected = this.selected;
     const target = { path: selected ? `${this.root}/${selected.path}` : this.root,
       name: selected ? selected.path.split("/").pop() : "", dir: selected ? selected.dir : true,
@@ -732,7 +815,7 @@ export default class Files extends View {
     return v_flex().id("files").track_focus(this.keys).size_full().min_h(0)
       .on_key_down((e, cx) => {
         if (!props()?.viewer && e.keystroke === (isWindows() ? "ctrl-v" : "cmd-v")) { cx.stop_propagation(); this.pasteKey(cx); }
-        else if (e.keystroke === "escape" && this.selected) { cx.stop_propagation(); this.selected = null; cx.notify(); }
+        else if (e.keystroke === "escape" && this.selected) { cx.stop_propagation(); this.clearSelection(); cx.notify(); }
       })
       // Sizes arrive in window points; element sizes are given at zoom 1.
       .on_size_change((size, cx) => {
@@ -749,12 +832,13 @@ export default class Files extends View {
             .cursor_pointer().text_color(t.muted).hover(s => s.bg(t.hover).text_color(t.foreground))
             .on_click((_e, cx) => { this.source = !this.source; cx.notify(); })
             .child(this.source ? T().preview : T().source))))
-        .when(!this.file, el => el
-          .child(tool("new", "New", Boolean(this.root)))
+         .when(!this.file, el => el
+          .when((this.selection?.items.size || 0) > 1, el => el.child(div().text_size(11).text_color(t.muted).child(`${this.selection.items.size} selected`)))
+          .child(tool("new", "New", Boolean(this.root) && (this.selection?.items.size || 0) < 2))
           .child(tool("delete", "Delete", Boolean(this.root && this.selected)))
           .child(tool("reload", "Reload", Boolean(this.root) && !this.loading))))
       .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6)
-        .on_mouse_down("left", (_e, cx) => { this.selected = null; this.keys.focus(); cx.notify(); })
+        .on_mouse_down("left", (_e, cx) => { this.clearSelection(); this.keys.focus(); cx.notify(); })
         .on_mouse_down("right", () => this.root && this.openMenu("", true))
         .on_drop((e, cx) => this.drop(e.paths, "", cx)).children(this.rows("", 0, [], t, dark))
         .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))

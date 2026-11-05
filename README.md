@@ -23,7 +23,7 @@ For manual installation, updates, and other requirements, see [WINDOWS.md](WINDO
 
 ## Features
 
-- A file tree that keeps its expanded folders when you open file tabs.
+- A file tree with Ctrl/Shift multi-selection that keeps its expanded folders when you open file tabs.
 - File tabs in a Herdr Space, with syntax highlighting and search/replace.
 - Explicit saving with **Save** or **Ctrl+S**, plus recovery drafts for unsaved edits.
 - Markdown **Source / Preview**, with zoom and pan for Mermaid diagrams.

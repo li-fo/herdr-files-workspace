@@ -7,7 +7,7 @@ const method=source.slice(source.indexOf('  toolbar(action, cx) {'),source.index
 const Panel=vm.runInNewContext('class Panel {'+method+'}; Panel',{
  openOverlay:x=>overlay=x,menuHeight:()=>72,MENU:()=>[],REQUEST:'request',setShared:(_k,v)=>request=v
 });
-const panel=new Panel();Object.assign(panel,{root:'/repo',on:'dgx01',me:'panel',refresh(){refreshes++},take(){takes++}});
+const panel=new Panel();Object.assign(panel,{root:'/repo',on:'dgx01',me:'panel',selectedItems(){return this.selected ? [this.selected] : [];},refresh(){refreshes++},take(){takes++}});
 panel.toolbar('delete',{});assert.equal(takes,0);
 panel.toolbar('new',{});assert.equal(overlay.props.menu.path,'/repo');assert(overlay.props.menu.newOnly);
 panel.selected={path:'docs/tmp',dir:true};panel.toolbar('new',{});assert.equal(overlay.props.menu.path,'/repo/docs/tmp');
