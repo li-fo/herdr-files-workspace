@@ -18,6 +18,7 @@ import { exec, windows, isWindows } from "./windows.js";
 import ICONS from "./icons.js";
 import { downloadDirectory } from "./download-settings.js";
 import { openFile, tabContext, closeDeletedFileTabs, closeDeletedFiles } from "./file-tabs.js";
+import { recordTabVisit } from "./tab-history.js";
 import Document from "./document.js";
 import TransferQueue from "./transfer-queue.js";
 import { directory, sshTarget } from "./file-operations.js";
@@ -806,6 +807,7 @@ export default class Files extends View {
   }
 
   render(cx) {
+    recordTabVisit();
     if (this.document) return this.document.render(cx);
     if (props()?.menu) return this.menu(theme());
     if (props()?.confirm) return this.confirm(theme());

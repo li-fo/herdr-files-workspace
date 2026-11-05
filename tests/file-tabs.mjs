@@ -5,7 +5,7 @@ const state = new Map(), calls = [], live = [];
 const source = fs.readFileSync('mods/files-workspace/file-tabs.js','utf8').replace(/^import .*;$/gm,'').replaceAll('export ','');
 const api = vm.runInNewContext(source+'\n({openFile,fileKey,tabContext,closeDeletedFileTabs})', {
   shared:k=>state.get(k),setShared:(k,v)=>state.set(k,v),panes:()=>live,window:()=>({platform:'windows'}),
-  notify:()=>{},
+  notify:()=>{},selectBeforeClosing:()=>{},
   run:(...args)=>calls.push(args),exec:async(cmd,args)=>{const info=JSON.parse(args.at(-1));const doc=info.document || info.viewer;assert.equal(state.get('files-workspace.opening-tab')[doc.space].root,doc.root);calls.push([cmd,args]);const tab='tab-'+calls.length;live.push({tab});return {code:0,stdout:JSON.stringify({tab})};}
 });
 const file={space:'space-1',on:null,root:'F:/work',file:"F:/work/한글 ' note.md"};

@@ -115,6 +115,13 @@ Deleting a folder also closes tabs for its files. Failed deletions keep their ta
 Unsaved edits remain in the existing draft storage. Tabs with split panes stay open
 to protect other panes and terminals; close their file pane manually.
 
+While Files Workspace is visible, it records tab visits for each space, including
+agent and terminal tabs. If deletion closes the active file tab, it selects the
+most recently visited tab that remains open in that space. Batch deletion excludes
+all tabs that it will close. Deleting a background file does not change the active
+tab. Visits before this feature was installed are not available; without a recorded
+destination, Herdr uses its normal tab selection behavior.
+
 Choose **Download to…** to select a local destination and start downloading there. Herdr remembers that folder across panels and restarts; the quick-download item becomes **Download to <selected path>**. Canceling the picker leaves the previous destination unchanged and starts no transfer. Until a folder is selected, quick download uses the Windows Downloads known folder. To change it again (including back to Downloads), use **Download to…** again. Each running transfer keeps the destination it started with.
 
 The port adds `windows.js` and `windows.ps1`, using Windows PowerShell 5.1 and OpenSSH `scp.exe`. Commands receive escaped JSON data; filenames are not evaluated as shell code. The actual Windows Downloads known-folder setting is used, including redirected Downloads folders. Local operations use literal paths and refuse replacement; completed transfers publish under a free name. A failed publish leaves staged files available for recovery and reports their location.

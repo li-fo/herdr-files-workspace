@@ -1,4 +1,5 @@
 import { exec, run, shared, setShared, panes, window, notify } from "herdr";
+import { selectBeforeClosing } from "./tab-history.js";
 export const TAB_KEY = "files-workspace.file-tabs";
 const opening = new Set();
 export const OPENING_KEY = "files-workspace.opening-tab";
@@ -34,6 +35,7 @@ export function closeDeletedFiles(files, on = null) {
     closing.add(entry.tab);
     closed.add(entry.tab);
   }
+  selectBeforeClosing(closing);
   for (const id of closing) run("tab.close", { id });
 }
 export async function openFile({ space, on, root, file, projectRoot }) {
