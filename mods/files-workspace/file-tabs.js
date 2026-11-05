@@ -1,4 +1,4 @@
-import { exec, run, shared, setShared, panes, window } from "herdr";
+import { exec, run, shared, setShared, panes, window, notify } from "herdr";
 export const TAB_KEY = "files-workspace.file-tabs";
 const opening = new Set();
 export const OPENING_KEY = "files-workspace.opening-tab";
@@ -9,6 +9,32 @@ export function fileKey(space, on, file) {
 export function tabContext(tab, space) {
   return Object.values(shared(TAB_KEY) || {}).find(entry => entry.tab === tab)
     || (space ? (shared(OPENING_KEY) || {})[space] : null);
+}
+// Match the machine and a complete path segment, including tabs in other spaces.
+// Leave draft state intact: Document.close() flushes unsaved edits on teardown.
+export function closeDeletedFileTabs(file, on = null, directory = false) {
+  closeDeletedFiles([{ file, directory }], on);
+}
+export function closeDeletedFiles(files, on = null) {
+  const normalize = path => !on && window()?.platform === "windows"
+    ? path.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase()
+    : path.replace(/\/+$/, "");
+  const targets = files.map(item => ({ path: normalize(item.file), directory: item.directory }));
+  const live = panes(), closed = new Set(), closing = new Set();
+  for (const entry of Object.values(shared(TAB_KEY) || {})) {
+    const tabPanes = live.filter(p => p.tab === entry.tab);
+    if ((entry.on || null) !== (on || null) || !tabPanes.length || closed.has(entry.tab)) continue;
+    const path = normalize(entry.file);
+    if (!targets.some(target => path === target.path || (target.directory && path.startsWith(target.path + "/")))) continue;
+    // A user can split a file tab and add a terminal. Never terminate it here.
+    if (tabPanes.length > 1 || tabPanes[0].terminal) {
+      notify({ title: "File deleted", body: "A split tab was kept open. Close its file pane manually.", level: "info" });
+      closed.add(entry.tab); continue;
+    }
+    closing.add(entry.tab);
+    closed.add(entry.tab);
+  }
+  for (const id of closing) run("tab.close", { id });
 }
 export async function openFile({ space, on, root, file, projectRoot }) {
   const key = fileKey(space, on, file);

@@ -17,13 +17,16 @@ assert.deepEqual(selectionRoots(visible).map(x=>x.path),['docs','z.md']);
 assert.deepEqual(visibleFiles(entries,new Set()).map(x=>x.path),['docs','z.md']);
 
 const source=fs.readFileSync('mods/files-workspace/main.js','utf8').replace(/^import .*;$/gm,'').replace('export default class Files','class Files');
-let overlay, clipboard, task, calls=[], refreshes=0;
+let overlay, clipboard, task, calls=[], refreshes=0, failedPath=null;
+const closedFiles=[];
 const values=new Map();
 const Files=vm.runInNewContext(source+'\nFiles',{
  props:()=>({}),downloadDirectory:()=>null,View:class {},FileSelection,visibleFiles,selectionRoots,
  shared:k=>values.get(k),setShared:(k,v)=>values.set(k,v),
- openOverlay:x=>overlay=x,notify(){},isWindows:()=>true,relativePath:(p,root)=>p.slice(root.length+1),
- exec:async (...args)=>{calls.push(args);return {code:0};}
+ openOverlay:x=>overlay=x,notify(){},home:()=>'/home',isWindows:()=>true,relativePath:(p,root)=>p.slice(root.length+1),
+ closeDeletedFileTabs:(...args)=>closedFiles.push(args),
+ closeDeletedFiles:(items,on)=>items.forEach(item=>closedFiles.push([item.file,on,item.directory])),
+ exec:async (...args)=>{calls.push(args);return {code:args[1].includes(failedPath)?1:0,stderr:'test failure'};}
 });
 const panel=new Files();Object.assign(panel,{root:'/repo',projectRoot:'/repo',on:null,entries,folders,selection:new FileSelection(),me:'panel',refresh(){refreshes++;},keys:{focus(){}}});
 panel.select('docs/a.md',false);panel.select('docs/b.md',false,{control:true});
@@ -35,10 +38,24 @@ panel.takeSelection(req,cx);await task;assert.equal(clipboard,visible.map(x=>'/r
 panel.takeSelection({...req,action:'delete'},cx);assert.equal(calls.length,0);assert.equal(overlay.props.confirm.items.length,5);
 panel.takeSelection({...req,action:'delete-yes'},cx);await task;
 assert.deepEqual(calls.map(x=>x[1][0]),['/repo/docs','/repo/z.md']);assert.equal(refreshes,1);
+assert.deepEqual(closedFiles.map(x=>x[0]),['/repo/docs','/repo/z.md']);
+closedFiles.length=0;failedPath='/repo/z.md';
+panel.takeSelection({...req,action:'delete-yes'},cx);await task;
+assert.deepEqual(closedFiles.map(x=>x[0]),['/repo/docs'],'failed deletion does not close its tab');
+failedPath=null;
 calls=[];panel.on='server';panel.takeSelection({...req,on:'server',action:'delete-yes'},cx);await task;
 assert.equal(calls[0][0],'rm');assert.equal(calls[0][2].on,'server');
 calls=[];panel.takeSelection({...req,action:'delete-yes'},cx);assert.equal(calls.length,0,'stale machine request rejected');
 panel.clearSelection();assert.equal(panel.selected,null);assert.equal(panel.selection.items.size,0);
+for (const action of ['trash','delete-yes']) {
+  closedFiles.length=0;
+  const request={id:action,from:'panel',action,path:'/repo/z.md',name:'z.md',dir:false,on:action==='trash'?null:'server'};
+  values.set('files-workspace.request',request);panel.take(cx);await task;
+  assert.equal(closedFiles.length,1,`${action} closes the deleted file tab`);
+  closedFiles.length=0;failedPath=request.path;
+  values.set('files-workspace.request',{...request,id:action+'-failed'});panel.take(cx);await task;
+  assert.equal(closedFiles.length,0,`${action} failure keeps the tab`);failedPath=null;
+}
 console.log('PASS Ctrl/Shift ranges, toggle, visible order, ancestor deduplication, menu snapshot, path copy, confirmed local/remote batches and stale-context rejection');
 
 // Exercise the actual row callbacks with public ClickEvent modifier fields.

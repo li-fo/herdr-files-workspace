@@ -17,7 +17,7 @@ import { spaces, panes, focused, run, readTextFile, watchFolder, theme, settings
 import { exec, windows, isWindows } from "./windows.js";
 import ICONS from "./icons.js";
 import { downloadDirectory } from "./download-settings.js";
-import { openFile, tabContext } from "./file-tabs.js";
+import { openFile, tabContext, closeDeletedFileTabs, closeDeletedFiles } from "./file-tabs.js";
 import Document from "./document.js";
 import TransferQueue from "./transfer-queue.js";
 import { directory, sshTarget } from "./file-operations.js";
@@ -498,6 +498,7 @@ export default class Files extends View {
           const r = await exec("trash", [path]);
           if (r.code !== 0) throw new Error((r.stderr || `exit ${r.code}`).trim());
           notify({ title: T().trashed(name), body: path.replace(home(), "~"), level: "success", timeout: 4000 });
+          closeDeletedFileTabs(path, on, dir);
           if (this.file && `${this.root}/${this.file}`.startsWith(path)) this.show(null);
           this.refresh(cx);
         } else if (action === "create-file" || action === "create-folder") {
@@ -524,6 +525,7 @@ export default class Files extends View {
           const r = await exec("rm", ["-rf", "--", path], { on });
           if (r.code !== 0) throw new Error((r.stderr || `exit ${r.code}`).trim());
           notify({ title: T().deleted(name), body: on ? `${on}:${path}` : path, level: "success", timeout: 4000 });
+          closeDeletedFileTabs(path, on, dir);
           if (this.file && `${this.root}/${this.file}`.startsWith(path)) this.show(null);
           this.refresh(cx);
         }
@@ -555,6 +557,7 @@ export default class Files extends View {
     this.batchBusy = true;
     cx.spawn(async cx => {
       let completed = 0;
+      const deleted = [];
       try {
         if (req.action === "copy" || req.action === "copy-relative") {
           const text = items.map(item => req.action === "copy" ? `${root}/${item.path}` : relativePath(`${root}/${item.path}`, projectRoot, !on && isWindows())).join("\n");
@@ -567,6 +570,7 @@ export default class Files extends View {
             else {
               const result = on ? await exec("rm", ["-rf", "--", path], {on}) : await exec("trash", [path]);
               if (result.code !== 0) throw new Error(result.stderr || `Cannot delete ${path}`);
+              deleted.push({ file: path, directory: item.dir });
               if (this.root === root && (this.on || null) === on) {
                 this.selection.remove(item.path);
                 this.selected = [...this.selection.items.values()].at(-1) || null;
@@ -579,6 +583,7 @@ export default class Files extends View {
       } catch (error) {
         notify({title: T().failed, body: `${completed} items completed. ${String(error.message || error)}`, level: "error"});
       } finally {
+        if (deleted.length) closeDeletedFiles(deleted, on);
         this.batchBusy = false;
         if (req.action === "delete-yes" && this.root === root && (this.on || null) === on) this.refresh(cx);
         cx.notify();
