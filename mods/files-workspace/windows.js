@@ -6,7 +6,7 @@ export const isWindows = () => window()?.platform === "windows";
 const quote = value => "'" + String(value).replace(/['\u2018\u2019\u201a\u201b]/g, "$&$&") + "'";
 export function windows(action, args = []) {
   const request = JSON.stringify({ action, args, appHome: appHome() });
-  return nativeExec("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-Command",
+  return nativeExec("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command",
     `& ${quote(appHome() + "/mods/files-workspace/windows.ps1")} -Request ${quote(request)}; exit $LASTEXITCODE`]);
 }
 export async function exec(command, args = [], options = {}) {

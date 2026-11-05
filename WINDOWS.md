@@ -25,7 +25,7 @@ For the first installation, open PowerShell and run:
 ```powershell
 git clone https://github.com/li-fo/herdr-files-workspace.git
 cd herdr-files-workspace
-powershell -NoProfile -File .\install-windows.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install-windows.ps1
 ```
 
 The installer copies the shipped `main` layout to `files-workspace` on the first
@@ -55,13 +55,24 @@ After installation, run `herdr-app status`. Confirm that the active layout is
 panel and confirm that its tab, Save control, and Find control appear.
 Mermaid diagrams also require Node.js. The installer does not install dependencies.
 
+## PowerShell execution policy
+
+The installation command and local file workers use `-ExecutionPolicy Bypass`
+for their own PowerShell process. This permits the bundled scripts to run under
+a restrictive user execution policy. It does not change the saved user or
+machine policy and does not require `Set-ExecutionPolicy`.
+
+Organization policies (`MachinePolicy` or `UserPolicy`) take precedence. If they
+block scripts, report the policy error and use the organization's approved
+installation method. Do not change organization policy to install this mod.
+
 ## Update
 
 Open PowerShell in the existing repository folder and run:
 
 ```powershell
 git pull --ff-only
-powershell -NoProfile -File .\install-windows.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install-windows.ps1
 ```
 
 ## File panel and transfers

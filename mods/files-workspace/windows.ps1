@@ -85,7 +85,7 @@ function LaunchWorker([string]$action, [object[]]$values) {
     $payload = @{action=$action;args=$values;appHome=$r.appHome} | ConvertTo-Json -Compress -Depth 8
     $code = '& ' + (Quote $PSCommandPath) + ' -Request ' + (Quote $payload)
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($code))
-    Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-STA','-EncodedCommand',$encoded) -WindowStyle Hidden | Out-Null
+    Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-STA','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded) -WindowStyle Hidden | Out-Null
 }
 function Scp([string[]]$values, [string]$log) {
     # Native argument arrays: filenames are not shell code. SFTP is the OpenSSH default.

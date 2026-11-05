@@ -9,7 +9,7 @@ const quote=s=>"'"+s.replaceAll("'","''")+"'";
 function run(action,args) {
   const request=JSON.stringify({action,args,appHome:app});
   const start=performance.now();
-  const result=spawnSync('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-STA','-Command',`& ${quote(script)} -Request ${quote(request)}; exit $LASTEXITCODE`],{encoding:'utf8',windowsHide:true});
+  const result=spawnSync('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-STA','-ExecutionPolicy','Bypass','-Command',`& ${quote(script)} -Request ${quote(request)}; exit $LASTEXITCODE`],{encoding:'utf8',windowsHide:true});
   return {...result,ms:performance.now()-start};
 }
 function ok(action,args) {const r=run(action,args); assert.equal(r.status,0,r.stderr); return r;}

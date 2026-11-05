@@ -10,7 +10,11 @@ fs.mkdirSync(path.join(app, 'mods/files-workspace'), {recursive:true});
 fs.copyFileSync(path.join(repo, 'mods/files-workspace/windows.ps1'), path.join(app, 'mods/files-workspace/windows.ps1'));
 function nativeExec(cmd, args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, {windowsHide:true});
+    if (cmd === 'powershell.exe') {
+      const index = args.indexOf('-ExecutionPolicy');
+      assert(index >= 0); assert.equal(args[index + 1], 'Bypass');
+    }
+    const child = spawn(cmd, args, {windowsHide:true, env:{...process.env, PSExecutionPolicyPreference:'Restricted'}});
     let stdout = '', stderr = '';
     child.stdout.on('data', b => stdout += b.toString('utf8'));
     child.stderr.on('data', b => stderr += b.toString('utf8'));
