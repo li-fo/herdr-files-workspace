@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const testRoot = fs.mkdtempSync(path.join(repo, '.test-windows-'));
-const app = path.join(testRoot, 'app');
+const app = path.join(testRoot, 'app-\u2018\u2019\u201a\u201b');
 fs.mkdirSync(path.join(app, 'mods/files-workspace'), {recursive:true});
 fs.copyFileSync(path.join(repo, 'mods/files-workspace/windows.ps1'), path.join(app, 'mods/files-workspace/windows.ps1'));
 function nativeExec(cmd, args) {
@@ -32,7 +32,7 @@ const waitJob = async (st, expected = '0') => {
   }
   throw new Error('Timed out: ' + st);
 };
-const fixture = path.join(testRoot, "한글 공백 ' [test] $(literal) `tick (1)");
+const fixture = path.join(testRoot, "한글 공백 ' \u2018\u2019\u201a\u201b [test] $(literal) `tick (1)");
 fs.mkdirSync(fixture);
 const file = path.join(fixture, "메모 ' [a] $test.txt");
 await ok('create-file',[file]); fs.writeFileSync(file,'테스트\nhello');

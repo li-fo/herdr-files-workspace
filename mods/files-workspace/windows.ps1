@@ -14,7 +14,7 @@ function Under([string]$p, [string]$base) {
     (Full $p).StartsWith((Full $base).TrimEnd('\','/') + '\', [StringComparison]::OrdinalIgnoreCase)
 }
 function WriteUtf8([string]$p, [string]$s) { [IO.File]::WriteAllText($p, $s, $utf8) }
-function Quote([string]$s) { "'" + $s.Replace("'", "''") + "'" }
+function Quote([string]$s) { "'" + [regex]::Replace($s, "['\u2018\u2019\u201a\u201b]", '$0$0') + "'" }
 function ValidName([string]$n) {
     if ([string]::IsNullOrWhiteSpace($n) -or $n -match '[<>:"/\\|?*\x00-\x1f]' -or $n -match '[. ]$' -or $n -match '^(?i:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)') {
         throw 'Invalid Windows file name.'

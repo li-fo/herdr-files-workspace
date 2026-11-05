@@ -2,7 +2,8 @@
 // Remote commands keep using Herdr's machine routing (POSIX targets).
 import { exec as nativeExec, window, appHome } from "herdr";
 export const isWindows = () => window()?.platform === "windows";
-const quote = value => "'" + String(value).replaceAll("'", "''") + "'";
+// PowerShell also treats these Unicode single quotes as string delimiters.
+const quote = value => "'" + String(value).replace(/['\u2018\u2019\u201a\u201b]/g, "$&$&") + "'";
 export function windows(action, args = []) {
   const request = JSON.stringify({ action, args, appHome: appHome() });
   return nativeExec("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-Command",
