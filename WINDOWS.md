@@ -110,6 +110,11 @@ folder, beside the selected file, or at the root when nothing is selected.
 Delete requires a selection; local items go to the Recycle Bin and remote items
 use the existing confirmation. Reload refreshes the tree without collapsing it.
 
+Returning to a recently viewed folder restores its file tree immediately, then
+refreshes it in the background. The panel keeps at most 12 inactive folder/machine
+trees in memory. Cached entries can briefly show the previous state. First visits
+still load the directory, but show its entries before Git status finishes.
+
 After a successful delete or move to the Recycle Bin, matching file tabs close.
 Deleting a folder also closes tabs for its files. Failed deletions keep their tabs.
 Unsaved edits remain in the existing draft storage. Tabs with split panes stay open

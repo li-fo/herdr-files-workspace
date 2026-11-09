@@ -1,0 +1,50 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+import {FileSelection} from '../mods/files-workspace/file-selection.js';
+const source=fs.readFileSync('mods/files-workspace/main.js','utf8');
+const body=source.slice(source.indexOf('  async loadFolder('),source.indexOf('  toggle(path, cx)'));
+let loc={cwd:'F:/a',on:null};
+const listings=[],git=[],tasks=[];
+const proto=vm.runInNewContext('class Panel {'+body+'}; Panel.prototype',{
+ FileSelection,location:()=>loc,key:()=>JSON.stringify(loc),TEMP:/^\.herdr-/,PER_FOLDER:500,TOTAL:5000,
+ directory:path=>new Promise(resolve=>listings.push({path,resolve})),
+ exec:()=>new Promise(resolve=>git.push(resolve)),addGitMark(){}
+});
+const panel=Object.assign(Object.create(proto),{treeStates:new Map(),folders:new Set(),entries:new Map(),show(){},watch(){}});
+let notifications=0;
+const cx={spawn(fn){tasks.push(fn(cx));},notify(){notifications++;}};
+const tick=async()=>{for(let i=0;i<8;i++) await Promise.resolve();};
+panel.refresh(cx);
+listings.shift().resolve([{name:'cached.txt',dir:false}]);await tick();
+assert.equal(panel.entries.get('')[0].name,'cached.txt');
+assert(notifications>0,'root list is published before Git resolves');
+assert.equal(panel.loading,true);
+loc={cwd:'F:/b',on:null};panel.refresh(cx);
+assert.equal(listings[0].path,'F:/b','switch does not wait for old Git query');
+loc={cwd:'F:/a',on:null};panel.refresh(cx);
+assert.equal(panel.entries.get('')[0].name,'cached.txt','return restores entries synchronously');
+const b=listings.shift(),a=listings.shift();
+b.resolve([{name:'wrong.txt',dir:false}]);await tick();
+assert.equal(panel.entries.get('')[0].name,'cached.txt');
+assert.equal(panel.loading,true,'old finally cannot clear current loading');
+git.shift()({code:1});await tick();
+assert.equal(panel.loading,true,'old A completion cannot clear new A loading');
+a.resolve([{name:'fresh.txt',dir:false}]);await tick();
+assert.equal(panel.entries.get('')[0].name,'fresh.txt');
+git.shift()({code:1});await Promise.all(tasks);
+assert.equal(panel.loading,false);
+
+// Return to the same path before its older directory query finishes.
+loc={cwd:'F:/c',on:null};panel.refresh(cx);const oldC=listings.shift();
+loc={cwd:'F:/d',on:null};panel.refresh(cx);const oldD=listings.shift();
+loc={cwd:'F:/c',on:null};panel.refresh(cx);const newC=listings.shift();
+oldC.resolve([{name:'stale.txt',dir:false}]);oldD.resolve([]);await tick();
+assert.equal(panel.entries.size,0,'generation rejects stale same-path results');
+newC.resolve([{name:'current.txt',dir:false}]);await tick();
+git.shift()({code:1});await Promise.all(tasks);
+assert.equal(panel.entries.get('')[0].name,'current.txt');
+const idle={spawn(){}};
+for(let i=0;i<20;i++){loc={cwd:`F:/cache-${i}`,on:null};panel.refresh(idle);}
+assert(panel.treeStates.size<=12,'inactive caches are bounded');
+console.log('PASS immediate cache restore, root before Git, context switching, stale A/B/A results and bounded caches');

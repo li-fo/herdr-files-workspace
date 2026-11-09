@@ -246,16 +246,17 @@ export default class Files extends View {
   watch(root, cx) {
     if (this.on || this.watched === root) return;
     this.watched = root;
+    const generation = this.treeGeneration;
     cx.spawn(async cx => {
-      try { while (this.watched === root) { await watchFolder(root); if (this.watched === root) this.refresh(cx); } }
-      catch { if (this.watched === root) this.watched = null; }
+      try { while (this.treeGeneration === generation && this.watched === root) { await watchFolder(root); if (this.treeGeneration === generation && this.watched === root) this.refresh(cx); } }
+      catch { if (this.treeGeneration === generation && this.watched === root) this.watched = null; }
     });
   }
 
   async loadFolder(path, context) {
-    const on = this.on, root = this.root;
+    const on = this.on, root = this.root, generation = this.treeGeneration;
     const entries = (await directory(path ? `${root}/${path}` : root, on)).filter(e => !TEMP.test(e.name));
-    if (key() !== context || (path && !this.folders.has(path))) return;
+    if (this.treeGeneration !== generation || key() !== context || (path && !this.folders.has(path))) return;
     for (const previous of this.entries.get(path) || []) {
       if (!entries.some(entry => entry.name === previous.name && entry.dir === previous.dir)) this.selection?.remove(path ? `${path}/${previous.name}` : previous.name);
     }
@@ -266,21 +267,38 @@ export default class Files extends View {
   }
 
   refresh(cx) {
-    if (this.loading) return;
     const { cwd, on } = location(), context = key();
+    if (this.loading && context === this.context) return;
     if (context !== this.context) {
-      if (this.context) this.treeStates.set(this.context, { folders: new Set(this.folders), selected: this.selected, selection: this.selection });
+      if (this.context) {
+        this.treeStates.delete(this.context);
+        this.treeStates.set(this.context, { folders: new Set(this.folders), selected: this.selected, selection: this.selection,
+          entries: new Map(this.entries), marks: this.marks, projectRoot: this.projectRoot });
+      }
       const saved = this.treeStates.get(context);
-      this.context = context; this.projectRoot = null; this.root = cwd; this.on = on; this.entries = new Map(); this.folders = saved?.folders || new Set();
-      this.pending = new Set(); this.marks = {}; this.selected = saved?.selected || null; this.selection = saved?.selection || new FileSelection(this.selected ? [this.selected] : []); this.show(null); this.watched = null; this.error = null; this.limited = false;
+      this.treeStates.delete(context);
+      while (this.treeStates.size > 12) this.treeStates.delete(this.treeStates.keys().next().value);
+      this.treeGeneration = (this.treeGeneration || 0) + 1;
+      this.context = context; this.projectRoot = saved?.projectRoot || null; this.root = cwd; this.on = on;
+      this.entries = saved?.entries || new Map(); this.folders = saved?.folders || new Set();
+      this.pending = new Set(); this.marks = saved?.marks || {}; this.selected = saved?.selected || null; this.selection = saved?.selection || new FileSelection(this.selected ? [this.selected] : []); this.show(null); this.watched = null; this.error = null; this.limited = false;
+      this.loading = false;
     }
     if (!cwd) return;
+    const generation = this.treeGeneration;
+    const current = () => this.treeGeneration === generation && key() === context;
     this.loading = true;
     this.limited = false;
     cx.spawn(async cx => {
       try {
-        for (const path of ["", ...this.folders]) await this.loadFolder(path, context);
+        for (const path of ["", ...this.folders]) {
+          if (!current()) return;
+          await this.loadFolder(path, context);
+          if (!current()) return;
+          cx.notify(); // Show each directory without waiting for other folders or Git.
+        }
         const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on }).catch(() => null);
+        if (!current()) return;
         const marks = {};
         if (top?.code === 0) {
           // Writes nothing under .git (index lock, fsmonitor cookie): the folder watch would refresh again.
@@ -290,11 +308,11 @@ export default class Files extends View {
             addGitMark(marks, `${top.stdout.trim()}/${entry.slice(3)}`, xy === "??" || xy.includes("A") ? "A" : xy.includes("U") ? "U" : xy.includes("D") ? "D" : "M", cwd);
           }
         }
-        if (key() !== context) return;
+        if (!current()) return;
         this.projectRoot = top?.code === 0 ? top.stdout.trim() : cwd;
         this.marks = marks; this.error = null; this.watch(cwd, cx);
-      } catch (e) { if (key() === context) this.error = String(e); }
-      finally { this.loading = false; cx.notify(); }
+      } catch (e) { if (current()) this.error = String(e); }
+      finally { if (this.treeGeneration === generation) { this.loading = false; cx.notify(); } }
     });
   }
 
@@ -309,12 +327,12 @@ export default class Files extends View {
     } else {
       this.folders.add(path);
       if (!this.entries.has(path) && !this.pending.has(path)) {
-        const context = this.context;
+        const context = this.context, generation = this.treeGeneration, pending = this.pending;
         this.pending.add(path);
         cx.spawn(async cx => {
           try { await this.loadFolder(path, context); }
-          catch (e) { if (key() === context) this.error = String(e); }
-          finally { this.pending.delete(path); cx.notify(); }
+          catch (e) { if (this.treeGeneration === generation && key() === context) this.error = String(e); }
+          finally { pending.delete(path); if (this.treeGeneration === generation) cx.notify(); }
         });
       }
     }
