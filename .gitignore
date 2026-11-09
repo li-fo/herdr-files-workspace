@@ -4,3 +4,4 @@ jsconfig.json
 .test-windows-*/
 .test-remote-*/
 windows-preview.png
+.codegraph/
