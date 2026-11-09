@@ -16,8 +16,13 @@ Start Herdr. Give your coding agent this instruction:
 Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/li-fo/herdr-files-workspace
 ```
 
-Use **Herdr 0.1.13 or later** on Windows. macOS and Linux installation is not supported by this guide.
-The installer creates the `files-workspace` layout and connects both mods and their shortcuts.
+Use **Herdr 0.1.13 or later**.
+Windows installation is documented in [WINDOWS.md](WINDOWS.md#manual-installation).
+Installation and basic use have also been confirmed on macOS with Herdr 0.1.14.
+See the [macOS installation and test notes](tests/macos/herdr-files-workspace-macos.md) for the experimental installer and verification scope.
+Linux has not been tested.
+
+The Windows installer creates the `files-workspace` layout and connects both mods and their shortcuts.
 The agent needs Git to clone the public repository.
 For manual installation, updates, and other requirements, see [WINDOWS.md](WINDOWS.md#manual-installation).
 
