@@ -39,9 +39,10 @@ foreach ($binding in @(@('ctrl-f', 'find'), @('cmd-f', 'find'), @('ctrl-h', 'rep
     if ($section.$key -and $section.$key -ne $command) { throw "Existing $key binding conflicts; merge keys.json manually." }
     $section | Add-Member -NotePropertyName $key -NotePropertyValue $command -Force
 }
-# Validate both modules before changing the installed files.
+# Validate all modules before changing the installed files.
 $headerSource = Join-Path $PSScriptRoot 'mods\files-workspace-header'
-foreach ($modSource in @($source, $headerSource)) {
+$agentsSource = Join-Path $PSScriptRoot 'mods\files-workspace-agents'
+foreach ($modSource in @($source, $headerSource, $agentsSource)) {
     herdr-app check $modSource | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "Source mod check failed: $modSource" }
 }
@@ -68,21 +69,43 @@ function Connect-Workspace($node) {
 }
 Connect-Workspace $layout
 if (!$script:filesBlocks -or !$script:headerBlocks) { throw 'Layout lacks a Files block or pane header. No files changed; connect these in your custom layout first.' }
+# Preserve the original active-tab block, its frame, and the independent Files panel.
+# Custom layouts without the standard tab bar are left alone.
+function Find-WorkspaceNode($node, [string]$id) {
+    if ($node.id -eq $id) { return $node }
+    foreach ($child in $node.children) { $found = Find-WorkspaceNode $child $id; if ($found) { return $found } }
+}
+$tabsNode = Find-WorkspaceNode $layout 'tabs'
+$mainNode = Find-WorkspaceNode $layout 'main'
+if ($tabsNode.content.mod -in @('tabs', 'files-workspace-agents') -and $mainNode.content.tab -eq 'active') {
+    $tabsNode.content.mod = 'files-workspace-agents'
+    if (!(Find-WorkspaceNode $layout 'files-workspace-views')) {
+        function Wrap-WorkspaceView($node) {
+            if (!$node.children) { return }
+            $node.children = @($node.children | ForEach-Object {
+                if ($_ -eq $mainNode) {
+                    [pscustomobject]@{id='files-workspace-views';type='stack';active=$mainNode.id;children=@($mainNode)}
+                } else { Wrap-WorkspaceView $_; $_ }
+            })
+        }
+        Wrap-WorkspaceView $layout
+    }
+}
 # Retire only our old selection workaround; preserve user colors.
 if ($layout.colors.selection -eq '#6699cc55') { $layout.colors.PSObject.Properties.Remove('selection') }
 
 $manifestPath = Join-Path $AppHome 'data\files-workspace\install-manifest.json'
 $oldFiles = @()
 if (Test-Path -LiteralPath $manifestPath) { $oldFiles = @((Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json).files) }
-# Only previous managed files inside these two mod folders may be removed.
+# Only previous managed files inside the listed mod folders may be removed.
 function Resolve-ManagedPath([string]$relative) {
-    if ($relative -notmatch '^mods[\\/]files-workspace(?:-header)?[\\/]' -or $relative -match '(^|[\\/])\.\.([\\/]|$)' -or [IO.Path]::IsPathRooted($relative)) { throw "Invalid managed file path: $relative" }
+    if ($relative -notmatch '^mods[\\/]files-workspace(?:-header|-agents)?[\\/]' -or $relative -match '(^|[\\/])\.\.([\\/]|$)' -or [IO.Path]::IsPathRooted($relative)) { throw "Invalid managed file path: $relative" }
     $resolved = [IO.Path]::GetFullPath((Join-Path $AppHome $relative))
     if (!$resolved.StartsWith($AppHome.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw "Managed file escapes app home: $relative" }
     return $resolved
 }
 $copies = @()
-foreach ($name in @('files-workspace', 'files-workspace-header')) {
+foreach ($name in @('files-workspace', 'files-workspace-header', 'files-workspace-agents')) {
     $modSource = Join-Path $PSScriptRoot "mods\$name"
     foreach ($file in Get-ChildItem -LiteralPath $modSource -File -Recurse) {
         $relative = "mods\$name\" + $file.FullName.Substring($modSource.Length + 1)
@@ -113,7 +136,7 @@ try {
     foreach ($target in $stale) { if (Test-Path -LiteralPath $target -PathType Leaf) { Invoke-FileRetry { Remove-Item -LiteralPath $target -Force } } }
     Invoke-FileRetry { [IO.File]::WriteAllText($keysPath, ($keys | ConvertTo-Json -Depth 50), [Text.UTF8Encoding]::new($false)) }
     Invoke-FileRetry { [IO.File]::WriteAllText($layoutPath, ($layout | ConvertTo-Json -Depth 50), [Text.UTF8Encoding]::new($false)) }
-    foreach ($name in @('files-workspace', 'files-workspace-header')) {
+    foreach ($name in @('files-workspace', 'files-workspace-header', 'files-workspace-agents')) {
         herdr-app check (Join-Path $AppHome "mods\$name") | Out-Host
         if ($LASTEXITCODE -ne 0) { throw "Installed mod check failed: $name" }
     }
@@ -140,4 +163,4 @@ if (!$NoActivate) {
         if ($LASTEXITCODE -ne 0) { throw 'Files are installed, but layout activation failed. Start Herdr and run: herdr-app do layout.switch --name files-workspace' }
     } finally { $env:HERDR_APP_HOME = $oldAppHome }
 }
-Write-Output 'Layout: files-workspace. Modules: files-workspace, files-workspace-header. Shortcuts: Save, Find, Replace.'
+Write-Output 'Layout: files-workspace. Modules: files-workspace, files-workspace-header, files-workspace-agents. Shortcuts: Save, Find, Replace.'

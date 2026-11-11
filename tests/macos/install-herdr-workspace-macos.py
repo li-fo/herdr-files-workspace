@@ -29,7 +29,7 @@ def main():
     os.environ['HERDR_APP_HOME'] = str(app)
     # Confirm that activation is possible before downloading or changing files.
     run(executable, 'status')
-    names = ('files-workspace', 'files-workspace-header')
+    names = ('files-workspace', 'files-workspace-header', 'files-workspace-agents')
     layout_path = app / 'layouts/files-workspace.json'
     keys_path = app / 'keys.json'
     layout = json.loads((layout_path if layout_path.exists() else app / 'layouts/main.json').read_text())
@@ -62,6 +62,29 @@ def main():
     connect(layout)
     if not all(counts):
         raise SystemExit('The layout needs a Files block and pane header. No files changed.')
+    def find(node, identity):
+        if node.get('id') == identity:
+            return node
+        for child in node.get('children', []):
+            found = find(child, identity)
+            if found is not None:
+                return found
+        return None
+
+    tabs, main_view = find(layout, 'tabs'), find(layout, 'main')
+    if (tabs and main_view and tabs.get('content', {}).get('mod') in ('tabs', 'files-workspace-agents')
+            and main_view.get('content', {}).get('tab') == 'active'):
+        tabs['content']['mod'] = 'files-workspace-agents'
+        if find(layout, 'files-workspace-views') is None:
+            def wrap(node):
+                children = node.get('children', [])
+                for index, child in enumerate(children):
+                    if child is main_view:
+                        children[index] = {'id': 'files-workspace-views', 'type': 'stack',
+                                           'active': main_view['id'], 'children': [main_view]}
+                    else:
+                        wrap(child)
+            wrap(layout)
     if layout.get('colors', {}).get('selection') == '#6699cc55':
         del layout['colors']['selection']
     with tempfile.TemporaryDirectory(prefix='herdr-workspace-') as temporary:

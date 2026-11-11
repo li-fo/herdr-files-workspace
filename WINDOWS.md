@@ -38,7 +38,7 @@ changing files and reports the missing structure.
 Use `-NoActivate` to install without switching the active layout. Use `-AppHome`
 for a custom app folder. By default, the installer uses `HERDR_APP_HOME` when set.
 
-The installer backs up affected files, checks both mods, and adds scoped
+The installer backs up affected files, checks all three mods, and adds scoped
 Save, Find, and Replace shortcuts. It connects the companion header in the
 custom layout. It preserves other layouts and does not install Preview Plus.
 Use this PowerShell installer on Windows, not the older `install.sh` script.

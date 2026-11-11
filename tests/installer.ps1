@@ -59,3 +59,18 @@ $global:filesWorkspaceActivated = $false
 $fresh = Get-Content "$fixture\layouts\files-workspace.json" -Raw | ConvertFrom-Json
 if ($fresh.cloned_from.name -ne 'main' -or !$global:filesWorkspaceActivated) { throw 'Fresh layout not created and activated' }
 Write-Output 'PASS fresh layout, header connection, shipped layout preservation, activation and fresh-install rollback'
+
+# Standard layouts acquire one shared-view stack; reinstall preserves split content.
+$standard = '{"id":"root","children":[{"id":"tabs","content":{"mod":"tabs"}},{"id":"body","children":[{"id":"main","type":"block","content":{"tab":"active","pane":{"header":{"content":{"mod":"pane"}}}}},{"id":"files","content":{"mod":"files"}}]}]}'
+Set-Content "$fixture\layouts\files-workspace.json" $standard
+& "$repo\install-windows.ps1" -AppHome $fixture -NoActivate
+$connected = Get-Content "$fixture\layouts\files-workspace.json" -Raw | ConvertFrom-Json
+if ($connected.children[0].content.mod -ne 'files-workspace-agents') { throw 'Agent tab bar not connected' }
+$stack = $connected.children[1].children[0]
+if ($stack.id -ne 'files-workspace-views' -or $stack.children[0].id -ne 'main') { throw 'Original tab view not wrapped' }
+if ($connected.children[1].children[1].id -ne 'files') { throw 'File panel was moved' }
+& "$repo\install-windows.ps1" -AppHome $fixture -NoActivate
+$again = Get-Content "$fixture\layouts\files-workspace.json" -Raw | ConvertFrom-Json
+if ($again.children[1].children[0].children[0].id -ne 'main') { throw 'View stack nested on reinstall' }
+if (!(Test-Path "$fixture\mods\files-workspace-agents\split.js")) { throw 'Agent dependencies missing' }
+Write-Output 'PASS shared-view installation, independent Files panel and idempotent reinstall'

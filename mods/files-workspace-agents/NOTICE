@@ -1,0 +1,7 @@
+Files Workspace Agents View companion.
+
+tabs.js is adapted from Herdr v0.1.15 defaults/mods/tabs/main.js:
+https://github.com/herdrdev/herdr-app/blob/v0.1.15/defaults/mods/tabs/main.js
+Herdr is distributed under the Apache License, Version 2.0.
+Changes add a shared agent view, safe terminal focus, and optional ScrollHandle support.
+The shipped Herdr mods are not modified by this companion.
