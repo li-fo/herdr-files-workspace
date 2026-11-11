@@ -1,3 +1,4 @@
+import { isMoving } from "./file-move.js";
 import { exec, run, shared, setShared, panes, window, notify } from "herdr";
 import { selectBeforeClosing } from "./tab-history.js";
 export const TAB_KEY = "files-workspace.file-tabs";
@@ -39,6 +40,7 @@ export function closeDeletedFiles(files, on = null) {
   for (const id of closing) run("tab.close", { id });
 }
 export async function openFile({ space, on, root, file, projectRoot }) {
+  if (isMoving({file,on})) throw new Error("This file is being copied or moved.");
   const key = fileKey(space, on, file);
   const existing = (shared(TAB_KEY) || {})[key];
   if (existing && panes().some(p => p.tab === existing.tab)) {

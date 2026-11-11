@@ -9,6 +9,17 @@ const location=vm.runInNewContext(src.slice(src.indexOf('const browseLocations =
  tabContext:tab=>tab==='editor'?{root:'/repo/docs/tmp',on:'dgx'}:null
 });
 assert.equal(location().cwd,'/repo');
+// A pinned terminal from another Space must not redirect the selected file tree.
+active={id:'local',active:true,machine:null,folder:'/local',tabs:[{id:'local-tab',active:true}]};
+focus={space:'local',tab:'local-tab',pane:null,terminal:'remote/t9',cwd:'/remote/private'};
+assert.equal(location().cwd,'/local');
+assert.equal(location().on,null);
+active={id:'remote-space',active:true,machine:'dgx',folder:'/remote-project',tabs:[]};
+focus={pane:null,terminal:'t1',cwd:'/local'};
+assert.equal(location().cwd,'/remote-project');
+assert.equal(location().on,'dgx');
+active={id:'dgx/space',active:true,machine:'dgx',folder:'/repo'};
+focus={tab:'terminal',pane:'terminal',cwd:'/repo'};
 focus={tab:'editor',pane:'editor',cwd:null};
 assert.equal(location().cwd,'/repo');
 assert.equal(location().cwd,'/repo');

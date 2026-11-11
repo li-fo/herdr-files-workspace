@@ -1,3 +1,5 @@
+import { FileDrag } from "./file-drag.js";
+import { planMove, moveFiles, beginMove, endMove, matchesPath } from "./file-move.js";
 import { FileSelection, visibleFiles, selectionRoots } from "./file-selection.js";
 import { addGitMark, gitMark } from "./git-marks.js";
 import { relativePath } from "./paths.js";
@@ -17,7 +19,7 @@ import { spaces, panes, focused, run, readTextFile, watchFolder, theme, settings
 import { exec, windows, isWindows } from "./windows.js";
 import ICONS from "./icons.js";
 import { downloadDirectory } from "./download-settings.js";
-import { openFile, tabContext, closeDeletedFileTabs, closeDeletedFiles } from "./file-tabs.js";
+import { openFile, tabContext, closeDeletedFileTabs, closeDeletedFiles, TAB_KEY, OPENING_KEY } from "./file-tabs.js";
 import { recordTabVisit } from "./tab-history.js";
 import Document from "./document.js";
 import TransferQueue from "./transfer-queue.js";
@@ -129,6 +131,8 @@ const parentOf = path => {
 // A menu row is [action, label, icon]; null draws a divider.
 const MENU = (target, t = T()) => target.items?.length > 1
   ? [["open-selected", "Open selected files", "file-plus.svg"],
+     ["move-to", "Move to…", "folder-plus.svg"],
+      ["copy-to", "Copy to…", "copy.svg"],
      ["download", "Download selected items", "download.svg"],
      ["copy", "Copy Paths", "copy.svg"], ["copy-relative", "Copy Relative Paths", "copy.svg"], null,
      ["delete", target.on ? "Delete selected items…" : "Move selected items to Recycle Bin…", "trash.svg"]]
@@ -148,6 +152,8 @@ const MENU = (target, t = T()) => target.items?.length > 1
       ["new-file", t.newFile, "file-plus.svg"],
       ["new-folder", t.newFolder, "folder-plus.svg"],
       ["rename", t.rename, "pen.svg"],
+      ["move-to", "Move to…", "folder-plus.svg"],
+      ["copy-to", "Copy to…", "copy.svg"],
       null,
       // Here: the Trash (Put Back works); another machine has none, so it asks and deletes.
       target.on ? ["delete", t.delete, "trash.svg"] : ["trash", t.moveToTrash, "trash.svg"],
@@ -165,7 +171,15 @@ const menuHeight = list => list.reduce((h, it) => h + (it ? MENU_ROW : 9), 10);
 const browseLocations = new Map();
 function location() {
   if (props()?.viewer) return { cwd: props().viewer.root, on: props().viewer.on };
-  const space = spaces().find(s => s.active), f = focused();
+  const space = spaces().find(s => s.active);
+  // Composition terminals can belong to another Space. Keep the file browser
+  // on the selected Space, using its tab instead of the pinned terminal's cwd.
+  const actual = focused();
+  const selectedTab = space?.tabs?.find(t => t.active)?.id;
+  const selectedPane = actual?.pane === null && selectedTab ? panes().find(p => p.tab === selectedTab && p.cwd) : null;
+  const f = actual?.pane === null
+    ? { space: space?.id, tab: selectedTab, pane: selectedPane?.pane, cwd: selectedPane?.cwd }
+    : actual;
   const pane = f?.pane ? panes().find(p => p.pane === f.pane) : null;
   const fileTab = tabContext(f?.tab, space?.id);
   if (fileTab) {
@@ -216,7 +230,7 @@ export default class Files extends View {
   init(_props, cx) {
     if (props()?.document) { this.document = new Document(); return this.document.init(props().document, cx); }
     if (props()?.ask) return this.initAsk(cx);
-    if (props()?.menu || props()?.confirm) { this.at = 0; this.handle = cx.focus_handle(); this.handle.focus(); return; }
+    if (props()?.menu || props()?.confirm || props()?.moveConflict || props()?.dropChoice) { this.at = 0; this.handle = cx.focus_handle(); this.handle.focus(); return; }
     // Which panel a menu choice is for: the one that opened the menu.
     this.me = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     this.transfers = new TransferQueue(T, cx => this.refresh(cx));
@@ -255,12 +269,34 @@ export default class Files extends View {
 
   async loadFolder(path, context) {
     const on = this.on, root = this.root, generation = this.treeGeneration;
-    const entries = (await directory(path ? `${root}/${path}` : root, on)).filter(e => !TEMP.test(e.name));
+    this.folderErrors ||= new Map();
+    this.folderErrors.delete(path);
+    let entries;
+    try { entries = (await directory(path ? `${root}/${path}` : root, on)).filter(e => !TEMP.test(e.name)); }
+    catch (error) {
+      if (this.treeGeneration === generation && key() === context) this.folderErrors.set(path,String(error.message || error));
+      throw error;
+    }
     if (this.treeGeneration !== generation || key() !== context || (path && !this.folders.has(path))) return;
+    if (this.drag?.state?.active) {
+      this.deferredListings ||= new Map();
+      this.deferredListings.set(path,{entries,context,generation});
+      return;
+    }
+    this.applyFolder(path,entries);
+  }
+
+  applyFolder(path, entries) {
     for (const previous of this.entries.get(path) || []) {
       if (!entries.some(entry => entry.name === previous.name && entry.dir === previous.dir)) this.selection?.remove(path ? `${path}/${previous.name}` : previous.name);
     }
     if (this.selection && this.selected && !this.selection.items.has(this.selected.path)) this.selected = [...this.selection.items.values()].at(-1) || null;
+    // Closed folders are a cache, not a permanent allocation from the visible-tree budget.
+    for (const [cached] of this.entries) {
+      const total = [...this.entries.values()].reduce((n,rows)=>n+rows.length,0);
+      if (total + entries.length <= TOTAL && this.entries.size < 64) break;
+      if (cached && cached !== path && !this.folders.has(cached)) this.entries.delete(cached);
+    }
     const used = [...this.entries.entries()].filter(([p]) => p !== path).reduce((n, [, e]) => n + e.length, 0);
     this.entries.set(path, entries.slice(0, Math.max(0, Math.min(PER_FOLDER, TOTAL - used))).sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name)));
     if (entries.length > PER_FOLDER || used + entries.length > TOTAL) this.limited = true;
@@ -268,34 +304,53 @@ export default class Files extends View {
 
   refresh(cx) {
     const { cwd, on } = location(), context = key();
+    if (context === this.context && this.drag?.state?.active) { this.refreshDeferred = true; return; }
     if (this.loading && context === this.context) return;
+    this.refreshDeferred = false;
     if (context !== this.context) {
       if (this.context) {
         this.treeStates.delete(this.context);
         this.treeStates.set(this.context, { folders: new Set(this.folders), selected: this.selected, selection: this.selection,
           entries: new Map(this.entries), marks: this.marks, projectRoot: this.projectRoot });
       }
+      this.drag?.cancel();
       const saved = this.treeStates.get(context);
       this.treeStates.delete(context);
       while (this.treeStates.size > 12) this.treeStates.delete(this.treeStates.keys().next().value);
       this.treeGeneration = (this.treeGeneration || 0) + 1;
       this.context = context; this.projectRoot = saved?.projectRoot || null; this.root = cwd; this.on = on;
       this.entries = saved?.entries || new Map(); this.folders = saved?.folders || new Set();
+      this.deferredListings = new Map(); this.folderErrors = new Map();
       this.pending = new Set(); this.marks = saved?.marks || {}; this.selected = saved?.selected || null; this.selection = saved?.selection || new FileSelection(this.selected ? [this.selected] : []); this.show(null); this.watched = null; this.error = null; this.limited = false;
       this.loading = false;
     }
     if (!cwd) return;
     const generation = this.treeGeneration;
-    const current = () => this.treeGeneration === generation && key() === context;
+    const current = () => {
+      if (this.treeGeneration !== generation || key() !== context) return false;
+      if (this.drag?.state?.active) { this.refreshDeferred = true; return false; }
+      return true;
+    };
     this.loading = true;
     this.limited = false;
     cx.spawn(async cx => {
       try {
-        for (const path of ["", ...this.folders]) {
+        let directoryError = null;
+        const paths = ["", ...this.folders];
+        // A cold root appears first. Cached trees refresh in bounded concurrent groups.
+        if (!this.entries.has("")) {
+          await this.loadFolder(paths.shift(), context);
           if (!current()) return;
-          await this.loadFolder(path, context);
+          cx.notify();
+        }
+        const width = !on && isWindows() ? 32 : 4;
+        for (let i=0;i<paths.length;i+=width) {
           if (!current()) return;
-          cx.notify(); // Show each directory without waiting for other folders or Git.
+          const results = await Promise.allSettled(paths.slice(i,i+width).map(path => this.loadFolder(path,context)));
+          if (!current()) return;
+          const failure = results.find(result=>result.status === "rejected");
+          if (failure) directoryError = String(failure.reason);
+          cx.notify();
         }
         const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on }).catch(() => null);
         if (!current()) return;
@@ -310,10 +365,23 @@ export default class Files extends View {
         }
         if (!current()) return;
         this.projectRoot = top?.code === 0 ? top.stdout.trim() : cwd;
-        this.marks = marks; this.error = null; this.watch(cwd, cx);
+        this.marks = marks; this.error = directoryError; this.watch(cwd, cx);
       } catch (e) { if (current()) this.error = String(e); }
-      finally { if (this.treeGeneration === generation) { this.loading = false; cx.notify(); } }
+      finally { if (this.treeGeneration === generation) { this.loading = false; if (!this.drag?.state?.active) cx.notify(); this.resumeTree(cx); } }
     });
+  }
+
+  resumeTree(cx) {
+    if (this.closed || this.drag?.state?.active) return;
+    let applied = false;
+    for (const [path,result] of this.deferredListings || []) {
+      if (result.generation === this.treeGeneration && result.context === key() && (!path || this.folders.has(path))) {
+        this.applyFolder(path,result.entries); applied = true;
+      }
+    }
+    this.deferredListings?.clear();
+    if (applied) cx.notify();
+    if (this.refreshDeferred && !this.loading) this.refresh(cx);
   }
 
   toggle(path, cx) {
@@ -322,11 +390,11 @@ export default class Files extends View {
       if (this.selected?.path.startsWith(path + "/")) this.selected = [...this.selection.items.values()].at(-1) || null;
       for (const folder of [...this.folders]) if (folder === path || folder.startsWith(path + "/")) {
         this.folders.delete(folder);
-        this.entries.delete(folder);
+        // Keep the bounded listing cache for instant reopening.
       }
     } else {
       this.folders.add(path);
-      if (!this.entries.has(path) && !this.pending.has(path)) {
+      if (!this.pending.has(path)) {
         const context = this.context, generation = this.treeGeneration, pending = this.pending;
         this.pending.add(path);
         cx.spawn(async cx => {
@@ -473,6 +541,7 @@ export default class Files extends View {
     if (path && this.selection?.items.has(path) && this.selection.items.size > 1) {
       target.items = this.selectedItems(); target.rootPath = this.root;
     }
+    if (path) { target.rootPath = this.root; target.items ||= [{path,dir}]; }
     target.relativePath = relativePath(target.path, this.projectRoot || this.root, !this.on && isWindows());
     target.previewStack = props()?.previewStack;
     openOverlay({ mod: "files-workspace", kind: "popup", width: downloadDirectory() ? 460 : 250, height: menuHeight(MENU(target)), props: { menu: target } });
@@ -484,6 +553,16 @@ export default class Files extends View {
     if (!req || req.from !== this.me || req.id === this.lastRequest) return;
     this.lastRequest = req.id;
     setShared(REQUEST, null);
+    if (req.action === "move-choice") { this.resolveMove(req, cx); return; }
+    if (req.action === "drop-choice") {
+      if (["move","copy"].includes(req.operation)) this.moveItems(req,req.destination,cx);
+      return;
+    }
+    if (req.action === "move-to" || req.action === "copy-to") {
+      openOverlay({mod:"files-workspace",kind:"dialog",width:520,height:240,
+        props:{ask:{...req,kind:"move",operation:req.action === "copy-to" ? "copy" : "move",folder:req.rootPath}}}); return;
+    }
+    if (req.action === "move-yes") { this.moveItems(req, req.value, cx); return; }
     if (req.items?.length > 1) { this.takeSelection(req, cx); return; }
     const { action, path, name, dir, on } = req;
     if (action === "preview-plus") { this.handoff(path.slice(this.root.length + 1), cx); return; }
@@ -556,6 +635,151 @@ export default class Files extends View {
       }
       cx.notify();
     });
+  }
+
+  moveItems(req, destination, cx) {
+    if (this.moveJob || this.batchBusy || req.rootPath !== this.root || (req.on || null) !== (this.on || null)) return;
+    const operation = req.operation === "copy" ? "copy" : "move";
+    let items, token;
+    try {
+      items = planMove(req.rootPath, req.items, destination, !req.on && isWindows());
+      if (!items.length) return;
+      const protectedItems = [...items, ...items.map(item => ({src:item.dest,dir:true}))];
+      const affected = entry => (entry.on || null) === (req.on || null)
+        && protectedItems.some(item => matchesPath(entry.file, item, !req.on && isWindows()));
+      if (Object.values(shared(OPENING_KEY) || {}).some(affected)) throw new Error("Wait for the file tab to finish opening.");
+      for (const entry of Object.values(shared(TAB_KEY) || {}).filter(affected)) {
+        const live = panes().filter(p => p.tab === entry.tab);
+        if (!live.length) continue;
+        const state = shared("files-workspace.editor:" + entry.key);
+        if (state?.dirty || state?.saving || state?.loading) throw new Error("Save changes and wait for loading to finish before copying or moving: " + entry.file);
+        if (live.length > 1 || live[0].terminal) throw new Error("Close the affected split file tab before copying or moving: " + entry.file);
+      }
+      token = beginMove(protectedItems, req.on);
+    } catch (error) { notify({title:operation === "copy" ? "Cannot copy files" : "Cannot move files",body:String(error.message || error),level:"error"}); return; }
+    this.moveJob = {token,req,operation,pending:items,completed:[],skipped:0,policy:null};
+    this.runMoveJob(cx);
+  }
+
+  runMoveJob(cx) {
+    const job = this.moveJob;
+    if (!job || this.batchBusy) return;
+    this.batchBusy = true;
+    cx.spawn(async cx => {
+      try {
+        const result = await moveFiles(job.operation === "copy" ? job.pending.slice(0,1) : job.pending, job.req.on, job.operation);
+        job.completed.push(...result.completed);
+        job.skipped += result.skipped?.length || 0;
+        job.pending = job.pending.slice(result.completed.length + (result.skipped?.length || 0));
+        if (result.error) { this.finishMove(result.error, cx); return; }
+        if (result.conflict) {
+          job.conflict = result.conflict;
+          openOverlay({mod:"files-workspace",kind:"dialog",width:560,height:330,
+            props:{moveConflict:{...result.conflict,operation:job.operation,token:job.token,from:this.me}}});
+        } else if (!job.pending.length) this.finishMove(null, cx);
+        else if (!result.completed.length && !result.skipped?.length) this.finishMove("No operation result was returned.",cx);
+        else cx.notify();
+      } catch (error) { this.finishMove(String(error.message || error), cx); }
+      finally {
+        this.batchBusy = false; cx.notify();
+        if (this.moveJob === job && !job.conflict && job.pending.length) this.runMoveJob(cx);
+      }
+    });
+  }
+
+  resolveMove(req, cx) {
+    const job = this.moveJob;
+    if (!job || req.token !== job.token || !job.conflict || this.batchBusy) return;
+    if (req.choice === "cancel") { this.finishMove(null, cx, true); return; }
+    if (!["overwrite","rename","skip"].includes(req.choice)) return;
+    if (req.all) job.policy = req.choice;
+    job.pending = job.pending.map((item,index) => ({...item,policy:index === 0 ? req.choice : job.policy || undefined}));
+    job.conflict = null;
+    this.runMoveJob(cx);
+  }
+
+  finishMove(error, cx, cancelled = false) {
+    const job = this.moveJob;
+    if (!job) return;
+    try {
+      if (job.completed.length) {
+        const closed = job.completed.flatMap(item => [...(job.operation === "copy" ? [] : [{file:item.src,directory:item.dir}]),
+          ...(item.replaced ? [{file:item.dest,directory:true}] : [])]);
+        closeDeletedFiles(closed, job.req.on);
+        this.treeStates?.clear();
+        if (!this.closed && this.root === job.req.rootPath && (this.on || null) === (job.req.on || null)) {
+          this.clearSelection();
+          for (const item of job.completed) this.reveal(item.dest.replaceAll("\\","/"), item.dir);
+          this.refresh(cx);
+        }
+      }
+      const action = job.operation === "copy" ? "Copy" : "Move", completed = job.operation === "copy" ? "copied" : "moved";
+      notify({title:error ? `${action} incomplete` : cancelled ? `${action} cancelled` : `Files ${completed}`,
+        body:`${job.completed.length} ${completed}, ${job.skipped} skipped.` + (error ? " " + error : ""),
+        level:error ? "error" : "info"});
+    } finally { endMove(job.token); this.moveJob = null; }
+  }
+
+  conflictChoice(choice, all = false) {
+    const conflict = props().moveConflict;
+    this.conflictAnswered = true;
+    setShared(REQUEST,{...conflict,action:"move-choice",choice,all,id:`${Date.now()}-${Math.random()}`});
+  }
+
+  moveConflict(t) {
+    const c = props().moveConflict;
+    const button = (choice,label) => div().id("move-"+choice).px(10).py(7).rounded(5).border_1().border_color(t.border)
+      .cursor_pointer().hover(s=>s.bg(t.hover)).on_click(()=>{this.conflictChoice(choice,Boolean(this.conflictAll));closeOverlay(props().overlay);}).child(label);
+    return v_flex().id("move-conflict").track_focus(this.handle).size_full().p(18).gap(12).bg(t.popover).text_color(t.foreground).text_size(13)
+      .on_key_down((e,cx)=>{if(e.key === "escape"){cx.stop_propagation();this.conflictChoice("cancel");closeOverlay(props().overlay);}})
+      .child(div().font_semibold().text_size(15).child("An item with this name already exists"))
+      .child(div().text_color(t.muted).child("From: " + c.src))
+      .child(div().text_color(t.muted).child("To: " + c.dest))
+      .child(div().child(c.directory ? "Overwrite replaces the entire destination folder, including its contents. Folders are not merged." : "Overwrite replaces the existing item. Folders are replaced in full, not merged. Auto rename keeps both items."))
+      .child(div().id("move-apply-all").cursor_pointer().py(6)
+        .on_click((_e,cx)=>{this.conflictAll=!this.conflictAll;cx.notify();})
+        .child((this.conflictAll ? "[x] " : "[ ] ") + `Apply to all remaining conflicts in this ${c.operation === "copy" ? "copy" : "move"}`))
+      .child(h_flex().flex_1().items_end().gap(8)
+        .child(button("overwrite","Overwrite")).child(button("rename","Auto rename"))
+        .child(button("skip","Skip")).child(button("cancel","Cancel")));
+  }
+
+  dragMove(e, target, cx) {
+    const wasActive = this.drag?.state?.active;
+    if (this.drag?.move(e.position, target)) {
+      if (!wasActive && this.drag.state.active) {
+        this.selection = new FileSelection(this.drag.state.items);
+        this.selected = this.drag.state.items.at(-1) || null;
+        this.keys?.focus();
+      }
+      cx.notify();
+    }
+  }
+  dragEnd(target, cx) {
+    const drag = this.drag?.finish(target);
+    if (!drag) { this.resumeTree(cx); cx.notify(); return; }
+    cx.stop_propagation();
+    if (!this.moveJob && !this.batchBusy) openOverlay({mod:"files-workspace",kind:"dialog",width:480,height:230,
+      props:{dropChoice:{rootPath:drag.root,items:drag.items,on:drag.on,from:this.me,destination:`${drag.root}/${drag.target}`}}});
+    this.resumeTree(cx);
+    cx.notify();
+  }
+
+  dropChoice(t) {
+    const target = props().dropChoice;
+    const choose = operation => {
+      if (operation) setShared(REQUEST,{...target,operation,action:"drop-choice",id:`${Date.now()}-${Math.random()}`});
+      closeOverlay(props().overlay);
+    };
+    const button = (operation,label) => div().id("drop-"+(operation || "cancel")).px(14).py(8).border_1().border_color(t.border).rounded(5)
+      .cursor_pointer().hover(s=>s.bg(t.hover)).on_click(()=>choose(operation)).child(label);
+    return v_flex().id("file-drop-choice").track_focus(this.handle).size_full().p(18).gap(12).bg(t.popover).text_color(t.foreground).text_size(13)
+      .on_key_down((e,cx)=>{if(e.key === "escape"){cx.stop_propagation();choose(null);}})
+      .child(div().text_size(15).font_semibold().child(`Move or copy ${target.items.length} item(s)?`))
+      .child(div().text_color(t.muted).truncate().child("From: " + target.rootPath))
+      .child(div().text_color(t.muted).truncate().child("To: " + (target.on ? target.on+":" : "") + target.destination))
+      .child(div().child("Move removes the originals. Copy keeps the originals."))
+      .child(h_flex().flex_1().items_end().gap(8).child(button("move","Move here")).child(button("copy","Copy here")).child(button(null,"Cancel")));
   }
 
   takeSelection(req, cx) {
@@ -686,7 +910,7 @@ export default class Files extends View {
 
   // A name for a new file or folder, or a new name: Enter creates or renames, Esc cancels.
   initAsk(cx) {
-    const a = props().ask, value = a.kind === "rename" ? a.name : "";
+    const a = props().ask, value = a.kind === "rename" ? a.name : a.kind === "move" ? a.rootPath : "";
     this.text = value; this.askError = null;
     this.input = InputState.new({ value });
     // Renaming a file selects its name without the extension, as Finder does.
@@ -701,6 +925,12 @@ export default class Files extends View {
 
   submitAsk() {
     const a = props().ask, value = this.text.trim();
+    if (a.kind === "move") {
+      try { if (!value) throw new Error("Enter a destination folder."); planMove(a.rootPath,a.items,value,!a.on && isWindows()); }
+      catch (error) { this.askError = String(error.message || error); return; }
+      setShared(REQUEST,{...a,value,id:`${Date.now()}-${Math.random()}`,action:"move-yes"});
+      closeOverlay(props().overlay); return;
+    }
     if (!validName(value, a.on)) { this.askError = T().badName; return; }
     const action = { "new-file": "create-file", "new-folder": "create-folder", rename: "rename-yes" }[a.kind];
     setShared(REQUEST, { id: `${Date.now()}-${Math.random()}`, action, ...a, value });
@@ -709,7 +939,7 @@ export default class Files extends View {
 
   ask(t) {
     const a = props().ask;
-    const title = a.kind === "rename" ? T().renameTitle(a.name) : a.kind === "new-file" ? T().newFileTitle : T().newFolderTitle;
+    const title = a.kind === "move" ? `${a.operation === "copy" ? "Copy" : "Move"} ${a.items.length} item(s)` : a.kind === "rename" ? T().renameTitle(a.name) : a.kind === "new-file" ? T().newFileTitle : T().newFolderTitle;
     const where = a.on ? `${a.on}:${a.folder}` : a.folder.replace(home(), "~");
     const button = (id, label, primary, act) => h_flex().id(id).h(32).px(14).items_center().rounded(8).border_1()
       .border_color(primary ? t.solid : t.input).bg(primary ? t.solid : t.raised).text_color(primary ? t.solid_foreground : t.foreground)
@@ -718,12 +948,12 @@ export default class Files extends View {
       .on_key_down((e, cx) => { if (e.key === "escape") { closeOverlay(props().overlay); cx.stop_propagation(); } })
       .child(div().text_size(14).font_semibold().truncate().child(title))
       .child(div().pt(4).text_size(12).text_color(t.dim).truncate().child(T().in(where)))
-      .child(div().pt(14).pb(6).text_size(11.5).text_color(t.dim).child(T().nameLabel))
+      .child(div().pt(14).pb(6).text_size(11.5).text_color(t.dim).child(a.kind === "move" ? "Existing destination folder (absolute or relative path)" : T().nameLabel))
       .child(Input.new(this.input).h(36).px(10).rounded(9).border_1().border_color(this.askError ? t.ansi1 : t.accent).bg(t.background).text_size(12.8).text_color(t.foreground))
       .child(div().h(18).pt(4).text_size(11.5).text_color(t.ansi1).child(this.askError ?? ""))
       .child(h_flex().flex_1().items_end().justify_end().gap(8)
         .child(button("ask-cancel", T().cancel, false, () => closeOverlay(props().overlay)))
-        .child(button("ask-ok", a.kind === "rename" ? T().save : T().create, true, (_e, cx) => { this.submitAsk(); cx.notify(); })));
+        .child(button("ask-ok", a.kind === "move" ? (a.operation === "copy" ? "Copy" : "Move") : a.kind === "rename" ? T().save : T().create, true, (_e, cx) => { this.submitAsk(); cx.notify(); })));
   }
 
   // "Delete …?" with the path and the machine; Enter deletes, Esc cancels.
@@ -776,28 +1006,51 @@ export default class Files extends View {
     });
   }
 
-  close() { this.closed = true; this.document?.close(); if (this.img) exec("rm", ["-rf", parentOf(this.img.abs)]).catch(() => {}); }
+  close() {
+    if (props()?.moveConflict && !this.conflictAnswered) this.conflictChoice("cancel");
+    this.closed = true;
+    if (this.moveJob && !this.batchBusy) this.finishMove(null, {}, true); this.document?.close(); if (this.img) exec("rm", ["-rf", parentOf(this.img.abs)]).catch(() => {}); }
 
   rows(prefix, depth, out, t, dark) {
     if (out.length >= TOTAL || depth > 40) return out;
     for (const entry of this.entries.get(prefix) ?? []) {
       if (out.length >= TOTAL) break;
       const path = prefix ? `${prefix}/${entry.name}` : entry.name, open = this.folders.has(path), mark = gitMark(this.marks, `${this.root}/${path}`);
+      const dragging = Boolean(this.drag?.state?.active);
+      const moving = dragging && this.drag.state.items.some(item => item.path === path);
+      const destination = dragging && this.drag.state.target === path && entry.dir;
       const markColor = mark === "A" ? t.ansi2 : mark === "D" || mark === "U" ? t.ansi1 : mark === "M" ? t.ansi3 : t.foreground;
       out.push(h_flex().id(`file-${path}`).h(28).flex_none().pl(8 + depth * 18).pr(8).gap(7).items_center().rounded(7).cursor_pointer()
-        .when(Boolean(this.selection?.items.has(path)), el => el.bg(t.selected)).hover(s => s.bg(t.hover))
-        .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); })
+        .border_1().border_color(destination ? t.ansi2 : t.background)
+        .when(dragging ? moving : Boolean(this.selection?.items.has(path)), el => el.bg(t.selected))
+        .when(!dragging, el => el.hover(s => s.bg(t.hover)))
+        .on_mouse_down("left", (e, cx) => {
+          cx.stop_propagation();
+          this.drag ||= new FileDrag();
+          this.drag.start(e.position, this.selection?.items.has(path) ? this.selectedItems() : [{path,dir:entry.dir}], this.root, this.on);
+        })
+        .on_mouse_move((e, cx) => { cx.stop_propagation(); this.dragMove(e, entry.dir ? path : prefix, cx); })
+        .on_mouse_up("left", (_e, cx) => this.dragEnd(entry.dir ? path : prefix, cx))
         .on_click((e, cx) => {
-          cx.stop_propagation(); this.select(path, entry.dir, e.modifiers); cx.notify();
+          cx.stop_propagation();
+          if (this.drag?.suppressClick) { this.drag.suppressClick = false; return; }
+          // A plain click is not a drag, even if native mouse-up callbacks did not run.
+          if (this.drag?.state && !this.drag.state.active) { this.drag.cancel(); this.resumeTree(cx); }
+          this.select(path, entry.dir, e.modifiers); cx.notify();
           if (!e.modifiers?.shift && !e.modifiers?.control && !e.modifiers?.platform) entry.dir ? this.toggle(path, cx) : this.openTab(path, cx);
         })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); if (!this.selection?.items.has(path)) this.select(path, entry.dir); cx.notify(); this.openMenu(path, entry.dir); })
         .on_drop((e, cx) => { cx.stop_propagation(); this.drop(e.paths, entry.dir ? path : prefix, cx); })
+        .child(div().w(12).flex_none().text_color(t.ansi2).child(destination ? "→" : ""))
         .child(entry.dir ? svg(`${DIR}/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
         .child(image(icon(path, entry.dir, open, dark)).size(16).flex_none())
         .child(div().flex_1().min_w(0).truncate().text_color(markColor).child(entry.name))
         .when(Boolean(mark), el => el.child(div().text_size(11).text_color(markColor).child(mark))));
-      if (entry.dir && open) this.rows(path, depth + 1, out, t, dark);
+      if (entry.dir && open) {
+        if (!this.entries.has(path)) out.push(div().id(`loading-${path}`).h(28).flex_none().pl(38 + depth * 18).text_size(11).text_color(t.dim)
+          .child(this.folderErrors?.has(path) ? `Cannot read folder: ${this.folderErrors.get(path)}` : "Loading folder…"));
+        this.rows(path, depth + 1, out, t, dark);
+      }
     }
     return out;
   }
@@ -830,6 +1083,8 @@ export default class Files extends View {
     if (props()?.menu) return this.menu(theme());
     if (props()?.confirm) return this.confirm(theme());
     if (props()?.ask) return this.ask(theme());
+    if (props()?.moveConflict) return this.moveConflict(theme());
+    if (props()?.dropChoice) return this.dropChoice(theme());
     this.take(cx);
     if (key() !== this.context) this.refresh(cx);
     const t = theme(), dark = Boolean(settings().dark);
@@ -838,8 +1093,10 @@ export default class Files extends View {
       .when(enabled, el => el.cursor_pointer().hover(s => s.bg(t.hover)))
       .on_click((_e, cx) => { cx.stop_propagation(); if (enabled) this.toolbar(action, cx); }).child(label);
     return v_flex().id("files").track_focus(this.keys).size_full().min_h(0)
+      .on_hover((hovered, cx) => { if (!hovered && this.drag?.state) { this.drag.cancel(); this.resumeTree(cx); cx.notify(); } })
       .on_key_down((e, cx) => {
         if (!props()?.viewer && e.keystroke === (isWindows() ? "ctrl-v" : "cmd-v")) { cx.stop_propagation(); this.pasteKey(cx); }
+        else if (e.keystroke === "escape" && this.drag?.state) { this.drag.cancel(); this.resumeTree(cx); cx.stop_propagation(); cx.notify(); }
         else if (e.keystroke === "escape" && this.selected) { cx.stop_propagation(); this.clearSelection(); cx.notify(); }
       })
       // Sizes arrive in window points; element sizes are given at zoom 1.
@@ -862,9 +1119,19 @@ export default class Files extends View {
           .child(tool("new", "New", Boolean(this.root) && (this.selection?.items.size || 0) < 2))
           .child(tool("delete", "Delete", Boolean(this.root && this.selected)))
           .child(tool("reload", "Reload", Boolean(this.root) && !this.loading))))
+      .when(!this.file, el => el.child(div().id("move-root-target").h(28).flex_none().px(8).border_1()
+        .border_color(this.drag?.state?.active && this.drag.state.target === "" ? t.ansi2 : t.background)
+        .text_size(11).text_color(this.drag?.state?.active ? t.ansi2 : t.dim).truncate()
+        .on_mouse_move((e,cx) => this.dragMove(e,"",cx))
+        .on_mouse_up("left",(_e,cx) => this.dragEnd("",cx))
+        .child(this.drag?.state?.active
+          ? `Selected ${this.drag.state.items.length}: ${this.drag.state.items[0]?.path} → ${this.drag.state.target === null ? "Choose another folder" : this.drag.state.target || "/"}`
+          : this.moveJob ? `${this.moveJob.operation === "copy" ? "Copying" : "Moving"} · ${this.moveJob.completed.length} done, ${this.moveJob.pending.length} remaining` : "Drop to choose Move / Copy · Root here")))
       .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6)
-        .on_mouse_down("left", (_e, cx) => { this.clearSelection(); this.keys.focus(); cx.notify(); })
+        .on_mouse_down("left", (_e, cx) => { this.drag?.cancel(); this.resumeTree(cx); this.clearSelection(); this.keys.focus(); cx.notify(); })
         .on_mouse_down("right", () => this.root && this.openMenu("", true))
+        .on_mouse_move((e, cx) => this.dragMove(e, "", cx))
+        .on_mouse_up("left", (_e, cx) => this.dragEnd("", cx))
         .on_drop((e, cx) => this.drop(e.paths, "", cx)).children(this.rows("", 0, [], t, dark))
         .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
         .when(this.limited, el => el.child(div().p(8).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total")))))

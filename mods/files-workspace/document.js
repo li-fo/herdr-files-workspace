@@ -1,3 +1,4 @@
+import { isMoving } from "./file-move.js";
 import DocumentSearch from "./document-search.js";
 import MarkdownPreview from "./markdown-preview.js";
 import { relativePath } from "./paths.js";
@@ -38,6 +39,7 @@ export default class Document {
     });
   }
   load(cx) {
+    if (isMoving(this.info)) return;
     if (this.closed || this.loading || this.saving) return;
     this.loading = true;
     this.error = null;
@@ -81,6 +83,7 @@ export default class Document {
   }
   applyTextChange(text, cx, updateEditor = true) {
     if (this.closed || !this.buffer || !this.editor) return;
+    if (isMoving(this.info)) { if (this.editor.value() !== this.buffer.text) this.editor.set_value(this.buffer.text); return; }
     if (updateEditor && this.editor.value() !== text) this.editor.set_value(text);
     this.buffer.text = text;
     this.discardArmed = false; this.draftPending = true; this.note = null;
@@ -129,6 +132,7 @@ export default class Document {
     if (title !== this.title) { this.title = title; run("tab.rename", { id: tab, name: title }); }
   }
   save(cx) {
+    if (isMoving(this.info)) return;
     if (this.closed || !this.buffer?.dirty || this.saving || this.loading) return;
     this.saving = true; this.error = null; this.publishHeader(); cx.notify();
     cx.spawn(async cx => {
@@ -155,6 +159,7 @@ export default class Document {
     if (shared(key)?.token === this.headerToken) setShared(key, null);
   }
   render(cx) {
+    if (isMoving(this.info)) return div().p(12).child("File operation in progress…");
     const t = theme();
     const pathInHeader = JSON.stringify(layout()).includes("files-workspace-header");
     const button = (id, label, action) => div().id(id).px(9).py(4).rounded(5).cursor_pointer().hover(s => s.bg(t.hover)).on_click((_e, cx) => action(cx)).child(label);

@@ -108,7 +108,106 @@ function DownloadDirectory([string]$selected) {
 }
 
 try {
+    $copyItems = $r.action -eq 'copy-items'
+    if ($copyItems) { $r.action = 'move-items' }
     switch ($r.action) {
+        'move-items' {
+            $done = @(); $skipped = @(); $conflict = $null; $moveError = $null; $copyTemps = @()
+            try {
+                $items = ConvertFrom-Json -InputObject $a[0]
+                foreach ($item in $items) {
+                    $src = SafeEntry $item.src; $dest = SafeEntry $item.dest
+                    $parent = [IO.Path]::GetDirectoryName($dest)
+                    ValidName ([IO.Path]::GetFileName($dest))
+                    if (-not (Test-Path -LiteralPath $src)) { throw "Source no longer exists: $src" }
+                    if (-not [IO.Directory]::Exists($parent)) { throw "Destination folder does not exist: $parent" }
+                    if ($src -eq $dest -or (Under $dest $src) -or (Under $src $dest)) { throw 'Cannot move an item into itself or replace its ancestor.' }
+                    if (-not $copyItems -and [IO.Path]::GetPathRoot($src) -ne [IO.Path]::GetPathRoot($dest)) { throw 'Move across drives is not supported. Use copy instead.' }
+                    foreach ($start in @($src, $parent)) {
+                        $p = $start
+                        while ($p) {
+                            if ((Get-Item -LiteralPath $p -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Moving through links or junctions is not supported.' }
+                            $p = [IO.Path]::GetDirectoryName($p)
+                        }
+                    }
+                }
+                foreach ($item in $items) {
+                    $src = Full $item.src; $dest = Full $item.dest; $replaced = $false
+                    $exists = Test-Path -LiteralPath $dest
+                    $policy = [string]$item.policy
+                    if ($exists -and $policy -eq 'skip') { $skipped += $item; continue }
+                    if ($exists -and $policy -notin @('overwrite','rename')) {
+                        $conflict = @{src=$item.src;dest=$item.dest;directory=[IO.Directory]::Exists($dest)}; break
+                    }
+                    if ($copyItems) {
+                        AssertNoLinks $src
+                        $stage = NewTemp ([IO.Path]::GetDirectoryName($dest)) 'upload'
+                        $copyTemps += $stage
+                        $stagedSource = Join-Path $stage 'payload'
+                        CopyTree $src $stagedSource
+                        $src = $stagedSource
+                    }
+                    if ($policy -eq 'rename') {
+                        $parent = [IO.Path]::GetDirectoryName($dest); $name = [IO.Path]::GetFileName($dest)
+                        $base = $name; $ext = ''
+                        if (-not [IO.Directory]::Exists($src) -and $name.LastIndexOf('.') -gt 0) {
+                            $base = $name.Substring(0,$name.LastIndexOf('.')); $ext = $name.Substring($name.LastIndexOf('.'))
+                        }
+                        $index = 0
+                        while ($true) {
+                            try { MoveFresh $src $dest; break }
+                            catch {
+                                if (-not (Test-Path -LiteralPath $dest) -or ++$index -gt 10000) { throw }
+                                $dest = Join-Path $parent ("$base ($index)$ext")
+                            }
+                        }
+                    } elseif ($exists -and $policy -eq 'overwrite') {
+                        # Check the whole replacement tree before deleting any previous content.
+                        AssertNoLinks $dest
+                        $backup = NewTemp ([IO.Path]::GetDirectoryName($dest)) 'upload'
+                        $old = Join-Path $backup 'original'
+                        MoveFresh $dest $old
+                        try { MoveFresh $src $dest }
+                        catch {
+                            try { MoveFresh $old $dest; RemoveTemp $backup }
+                            catch { throw "Move failed. Previous destination is preserved at $old. $($_.Exception.Message)" }
+                            throw
+                        }
+                        $replaced = $true
+                        $done += @{src=$item.src;dest=$dest;dir=$item.dir;replaced=$true}
+                        try { RemoveTemp $backup }
+                        catch { throw "Move completed, but previous destination remains at $old. $($_.Exception.Message)" }
+                        continue
+                    } else {
+                        try { MoveFresh $src $dest }
+                        catch {
+                            if (Test-Path -LiteralPath $dest) { $conflict = @{src=$item.src;dest=$item.dest;directory=[IO.Directory]::Exists($dest)}; break }
+                            throw
+                        }
+                    }
+                    $done += @{src=$item.src;dest=$dest;dir=$item.dir;replaced=$replaced}
+                }
+            } catch { $moveError = $_.Exception.Message }
+            finally {
+                foreach ($stage in $copyTemps) {
+                    try { RemoveTemp $stage }
+                    catch { $moveError = "$moveError Temporary copy remains at $stage. $($_.Exception.Message)" }
+                }
+            }
+            @{completed=@($done);skipped=@($skipped);conflict=$conflict;error=$moveError} | ConvertTo-Json -Depth 8 -Compress
+        }
+        'list-many' {
+            $paths = ConvertFrom-Json -InputObject $a[0]
+            $results = @(foreach ($path in $paths) {
+                try {
+                    $entries = @(Get-ChildItem -LiteralPath $path -Force -ErrorAction Stop | Where-Object { $_.Name -ne '.git' -and $_.Name -notmatch '^\.herdr-(upload|download)\.' } | Select-Object -First 501 | ForEach-Object {
+                        @{name=$_.Name;dir=[bool]$_.PSIsContainer}
+                    })
+                    @{entries=$entries;error=$null}
+                } catch { @{entries=@();error=$_.Exception.Message} }
+            })
+            ConvertTo-Json -InputObject $results -Depth 6 -Compress
+        }
         'list' {
             $items = @(Get-ChildItem -LiteralPath $a[0] -Force | Where-Object { $_.Name -ne '.git' -and $_.Name -notmatch '^\.herdr-(upload|download)\.' } | Select-Object -First 501 | ForEach-Object {
                 @{name=$_.Name;dir=[bool]$_.PSIsContainer}

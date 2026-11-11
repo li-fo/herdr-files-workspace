@@ -3,7 +3,7 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 const values=new Map();let writes=0;
 const source=fs.readFileSync('mods/files-workspace/document.js','utf8').replace(/^import .*;$/gm,'').replace('export function','function').replace('export default class','class');
-const Document=vm.runInNewContext(source+'\nDocument',{shared:k=>values.get(k),setShared:(k,v)=>{values.set(k,v);writes++;}});
+const Document=vm.runInNewContext(source+'\nDocument',{isMoving:()=>false,shared:k=>values.get(k),setShared:(k,v)=>{values.set(k,v);writes++;}});
 const doc=new Document();Object.assign(doc,{info:{key:'file-a'},headerToken:'instance-a',buffer:{dirty:true}});
 doc.publishHeader();const count=writes;doc.publishHeader();assert.equal(writes,count);
 assert.equal(values.get('files-workspace.editor:file-a').dirty,true);

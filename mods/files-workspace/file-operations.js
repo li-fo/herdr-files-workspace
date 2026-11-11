@@ -9,13 +9,38 @@ export async function sshTarget(machine) {
   return m.target;
 }
 
-export async function directory(path, on) {
-  if (!on && window()?.platform === "windows") {
-    const r = await windows("list", [path]);
-    if (r.code !== 0) throw new Error(r.stderr || "Cannot list this folder");
-    const result = JSON.parse(r.stdout || "[]");
-    return Array.isArray(result) ? result : [result];
+// Share in-flight reads; batch local Windows requests queued in the same turn.
+const directoryReads = new Map();
+let queuedDirectories = [];
+let directoryFlush = false;
+async function flushDirectories() {
+  const batch = queuedDirectories; queuedDirectories = []; directoryFlush = false;
+  for (let start = 0; start < batch.length; start += 32) {
+    const group = batch.slice(start,start+32);
+    try {
+      const r = await windows("list-many", [JSON.stringify(group.map(item=>item.path))]);
+      if (r.code !== 0) throw new Error(r.stderr || "Cannot list folders");
+      const results = JSON.parse(r.stdout);
+      for (let i=0;i<group.length;i++) {
+        const result = results[i];
+        if (!result || result.error) group[i].reject(new Error(result?.error || "Missing directory result"));
+        else group[i].resolve(result.entries);
+      }
+    } catch (error) { for (const item of group) item.reject(error); }
   }
+}
+export function directory(path, on) {
+  const identity = JSON.stringify([on || null, !on && isWindows() ? path.replaceAll("\\","/").toLowerCase() : path]);
+  if (directoryReads.has(identity)) return directoryReads.get(identity);
+  const read = !on && isWindows() ? new Promise((resolve,reject)=>{
+    queuedDirectories.push({path,resolve,reject});
+    if (!directoryFlush) { directoryFlush = true; Promise.resolve().then(flushDirectories); }
+  }) : readDirectory(path,on);
+  const pending = read.finally(()=>{if(directoryReads.get(identity)===pending) directoryReads.delete(identity);});
+  directoryReads.set(identity,pending);
+  return pending;
+}
+async function readDirectory(path, on) {
   const script = 'n=0; for p in "$1"/* "$1"/.[!.]* "$1"/..?*; do [ -e "$p" ] || [ -L "$p" ] || continue; name=${p##*/}; [ "$name" = .git ] && continue; if [ -d "$p" ] && [ ! -L "$p" ]; then kind=d; else kind=f; fi; printf "%s\\0%s\\0" "$kind" "$name"; n=$((n+1)); [ "$n" -gt 500 ] && break; done; test -d "$1"';
   const r = await exec("sh", ["-c", script, "files", path], { on });
   if (r.code !== 0) throw new Error(r.stderr || "Cannot list this folder");

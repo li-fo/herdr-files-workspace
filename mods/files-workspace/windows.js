@@ -4,10 +4,10 @@ import { exec as nativeExec, window, appHome } from "herdr";
 export const isWindows = () => window()?.platform === "windows";
 // PowerShell also treats these Unicode single quotes as string delimiters.
 const quote = value => "'" + String(value).replace(/['\u2018\u2019\u201a\u201b]/g, "$&$&") + "'";
-export function windows(action, args = []) {
+export function windows(action, args = [], options = {}) {
   const request = JSON.stringify({ action, args, appHome: appHome() });
   return nativeExec("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command",
-    `& ${quote(appHome() + "/mods/files-workspace/windows.ps1")} -Request ${quote(request)}; exit $LASTEXITCODE`]);
+    `& ${quote(appHome() + "/mods/files-workspace/windows.ps1")} -Request ${quote(request)}; exit $LASTEXITCODE`], options);
 }
 export async function exec(command, args = [], options = {}) {
   if (!isWindows() || options.on) return nativeExec(command, args, options);
