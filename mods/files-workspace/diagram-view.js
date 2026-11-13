@@ -4,6 +4,14 @@ import { theme, settings, appHome } from "herdr";
 
 export class DiagramViewport {
   constructor(width, height) { this.width = width; this.height = height; this.scale = 1; this.x = 0; this.y = 0; this.fitted = true; }
+  layout(width) {
+    // Fit is a compact overview. Manual zoom uses the document's vertical scroll.
+    const height = this.fitted
+      ? Math.max(180, Math.min(480, this.height * Math.min(1, width / this.width)))
+      : Math.max(180, this.height * this.scale);
+    if (this.vw !== width || this.vh !== height) this.resize(width, height);
+    return height;
+  }
   resize(width, height) {
     this.vw = width; this.vh = height;
     if (this.fitted) this.fit(); else this.clamp();
@@ -38,8 +46,7 @@ export class DiagramViewport {
 export function diagramView(block, id, width) {
   const result = block.diagram, t = theme();
   const state = block.viewport ||= new DiagramViewport(result.width, result.height);
-  const height = Math.max(180, Math.min(480, result.height * Math.min(1, width / result.width)));
-  if (state.vw !== width || state.vh !== height) state.resize(width, height);
+  const height = state.layout(width);
   const action = (suffix, label, fn) => div().id(`${id}-${suffix}`).flex_none().px(8).py(4).rounded(4).cursor_pointer()
     .hover(s => s.bg(t.hover)).on_click((_e, cx) => { cx.stop_propagation(); fn(); cx.notify(); }).child(label);
   const file = result.file.replaceAll("\\", "/").replace(appHome().replaceAll("\\", "/") + "/", "");
