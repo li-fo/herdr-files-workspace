@@ -3,7 +3,7 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import {FileSelection} from '../mods/files-workspace/file-selection.js';
 const source=fs.readFileSync('mods/files-workspace/main.js','utf8');
-const body=source.slice(source.indexOf('  async loadFolder('),source.indexOf('  toggle(path, cx)'));
+const body=source.slice(source.indexOf('  stopWatch('),source.indexOf('  toggle(path, cx)'));
 let loc={cwd:'F:/a',on:null};
 const listings=[],git=[],tasks=[];
 const proto=vm.runInNewContext('class Panel {'+body+'}; Panel.prototype',{

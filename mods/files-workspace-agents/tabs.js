@@ -1,4 +1,4 @@
-// Adapted from Herdr v0.1.15 defaults/mods/tabs (Apache-2.0).
+// Adapted from Herdr v0.1.16 defaults/mods/tabs (Apache-2.0).
 // https://github.com/herdrdev/herdr-app
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
@@ -16,11 +16,37 @@ function find(node, id) {
   return null;
 }
 
+function tabLabel(tab, lead) {
+  const prog = lead?.program?.name;
+  // Older runtimes do not expose whether the user named a tab.
+  if (typeof tab.named !== "boolean") return /^tb\d+$/.test(tab.name) ? prog ?? "Terminal" : tab.name;
+  const base = tab.named ? tab.name : prog ?? "Terminal";
+  if (!lead?.program?.agent) return base;
+  const live = (lead.title ?? "").replace(/^[^\p{L}\p{N}\p{Ps}\p{Pi}]+/u, "").replace(/^\[ [!.] \] /, "").trim();
+  const path = /^[~/]|^[A-Za-z]:\\/.test((lead.title ?? "").replace(/^[^\p{L}\p{N}~/]+/u, ""));
+  const telling = live && live !== lead.terminal && live !== prog && !path && !live.includes("@") && live.toLowerCase() !== lead.program.key;
+  return (tab.name === prog || !tab.named) && telling ? live : base;
+}
+
 export default class Tabs extends View {
   init() {
     this.pressed = null;
     this.scroll = base.ScrollHandle?.new?.() ?? null;
-    this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
+    try { this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}"); } catch { this.panels = {}; }
+    if (!this.panels || typeof this.panels !== "object" || Array.isArray(this.panels)) this.panels = {};
+    this.swipe = { acc: 0, steps: 0, at: 0, last: 0 };
+  }
+
+  wheel(e) {
+    const select = delta => { showNormal(); run(delta > 0 ? "tab.prev" : "tab.next"); };
+    if (e.delta_lines) { if (e.delta_lines.y) select(e.delta_lines.y); return; }
+    const s = this.swipe, now = Date.now();
+    if (e.touch_phase === "started" || now - s.at > 250 || e.delta.y * s.acc < 0) Object.assign(s, { acc: 0, steps: 0 });
+    s.at = now; s.acc += e.delta.y;
+    const need = s.steps ? 60 : 20;
+    if (Math.abs(s.acc) < need || now - s.last < 100) return;
+    s.acc -= Math.sign(s.acc) * need; s.steps++; s.last = now;
+    select(e.delta.y);
   }
 
   // The side panel is remembered per space: switching shows that space's choice
@@ -84,8 +110,9 @@ export default class Tabs extends View {
     const button = (id, label, action) => div().id(id).size(26).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
       .on_mouse_down("left", stop).on_click(action).child(label);
     const item = (c, i) => {
-      const program = panes().find(p => p.tab === c.id && p.program?.agent)?.program ?? panes().find(p => p.tab === c.id)?.program;
-      const name = /^tb\d+$/.test(c.name) ? program?.name ?? "Terminal" : c.name;
+      const lead = panes().find(p => p.tab === c.id && p.program?.agent) ?? panes().find(p => p.tab === c.id);
+      const program = lead?.program;
+      const name = tabLabel(c, lead);
       return h_flex().id(`tab-${c.id}`).h(29).px(10).gap(7).rounded(7).items_center().flex_none().text_size(12.8)
         // A rename or status dot on this or an earlier tab can push the active one out.
         .when(i <= active, el => el.on_size_change((_size, cx) => { this.scroll?.scroll_to_item(scrollIndex); cx.notify(); }))
@@ -124,7 +151,7 @@ export default class Tabs extends View {
     };
     return h_flex().size_full().min_w(0).px(10).pl(lightsPadding).gap(3).items_center().bg(t.chrome).border_b(1).border_color(t.border)
       .on_mouse_up("left", () => { this.pressed = null; })
-      .on_scroll_wheel(e => { if (Math.abs(e.delta.y) >= 1) { showNormal(); run(e.delta.y > 0 ? "tab.prev" : "tab.next"); } })
+      .on_scroll_wheel(e => this.wheel(e))
       .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_center().gap(3).overflow_x_scrollbar().when(Boolean(this.scroll), el => el.track_scroll(this.scroll))
         .on_size_change((_size, cx) => { if (active >= 0) { this.scroll?.scroll_to_item(scrollIndex); cx.notify(); } })
         .children(shown.map(item)))

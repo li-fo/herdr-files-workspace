@@ -1,5 +1,6 @@
 import { FileDrag } from "./file-drag.js";
 import { planMove, moveFiles, beginMove, endMove, matchesPath } from "./file-move.js";
+import * as host from "herdr";
 import { FileSelection, visibleFiles, selectionRoots } from "./file-selection.js";
 import { addGitMark, gitMark } from "./git-marks.js";
 import { relativePath } from "./paths.js";
@@ -228,6 +229,8 @@ function icon(path, dir, open, dark) {
 
 export default class Files extends View {
   init(_props, cx) {
+    this.checkOnly = typeof host !== "undefined" && host.checking?.() === true;
+    if (this.checkOnly) return;
     if (props()?.document) { this.document = new Document(); return this.document.init(props().document, cx); }
     if (props()?.ask) return this.initAsk(cx);
     if (props()?.menu || props()?.confirm || props()?.moveConflict || props()?.dropChoice) { this.at = 0; this.handle = cx.focus_handle(); this.handle.focus(); return; }
@@ -259,12 +262,24 @@ export default class Files extends View {
 
   watch(root, cx) {
     if (this.on || this.watched === root) return;
+    this.stopWatch();
     this.watched = root;
     const generation = this.treeGeneration;
     cx.spawn(async cx => {
-      try { while (this.treeGeneration === generation && this.watched === root) { await watchFolder(root); if (this.treeGeneration === generation && this.watched === root) this.refresh(cx); } }
+      try { while (!this.closed && this.treeGeneration === generation && this.watched === root) {
+        const pending = watchFolder(root); this.pendingWatch = pending;
+        await pending;
+        if (this.pendingWatch === pending) this.pendingWatch = null;
+        if (!this.closed && this.treeGeneration === generation && this.watched === root) this.refresh(cx);
+      } }
       catch { if (this.treeGeneration === generation && this.watched === root) this.watched = null; }
     });
+  }
+
+  stopWatch() {
+    this.watched = null;
+    this.pendingWatch?.cancel?.();
+    this.pendingWatch = null;
   }
 
   async loadFolder(path, context) {
@@ -318,6 +333,7 @@ export default class Files extends View {
       this.treeStates.delete(context);
       while (this.treeStates.size > 12) this.treeStates.delete(this.treeStates.keys().next().value);
       this.treeGeneration = (this.treeGeneration || 0) + 1;
+      this.stopWatch();
       this.context = context; this.projectRoot = saved?.projectRoot || null; this.root = cwd; this.on = on;
       this.entries = saved?.entries || new Map(); this.folders = saved?.folders || new Set();
       this.deferredListings = new Map(); this.folderErrors = new Map();
@@ -1007,6 +1023,7 @@ export default class Files extends View {
   }
 
   close() {
+    this.stopWatch();
     if (props()?.moveConflict && !this.conflictAnswered) this.conflictChoice("cancel");
     this.closed = true;
     if (this.moveJob && !this.batchBusy) this.finishMove(null, {}, true); this.document?.close(); if (this.img) exec("rm", ["-rf", parentOf(this.img.abs)]).catch(() => {}); }
@@ -1078,6 +1095,7 @@ export default class Files extends View {
   }
 
   render(cx) {
+    if (this.checkOnly) return div();
     recordTabVisit();
     if (this.document) return this.document.render(cx);
     if (props()?.menu) return this.menu(theme());

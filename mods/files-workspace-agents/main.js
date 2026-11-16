@@ -1,4 +1,5 @@
 import { div } from "gpui-kit";
+import * as host from "herdr";
 import { h_flex, v_flex } from "gpui-base";
 import { agents, spaces, props, theme, shared, setShared, run, closeOverlay, nextCommand, terminals, openOverlay } from "herdr";
 import Tabs from "./tabs.js";
@@ -7,6 +8,8 @@ import { choose, showSplit, showNormal, closeSplit, request, applyRequest, reset
 
 export default class AgentWorkspace extends Tabs {
   init(_props, cx) {
+    this.checkOnly = typeof host !== "undefined" && host.checking?.() === true;
+    if (this.checkOnly) return;
     if (!props()?.role || props().role === "tabs") {
       super.init();
       setShared(KEY + ".keep-on-space-change", localStorage.getItem("keep-on-space-change") === "true");
@@ -40,6 +43,7 @@ export default class AgentWorkspace extends Tabs {
       .on_click((_e, cx) => { cx.stop_propagation(); if (enabled) action(cx); }).child(text);
   }
   render(cx) {
+    if (this.checkOnly) return div();
     const p = props() || {}, role = p.role;
     if (role === "view-settings") {
       const keep = shared(KEY + ".keep-on-space-change") === true;
