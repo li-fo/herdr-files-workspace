@@ -21,3 +21,20 @@ search.replace(true,{notify(){}}); assert.equal(current,'beta beta'); assert.equ
 doc.saving=true; current='alpha'; search.replace(true,{notify(){}}); assert.equal(current,'alpha');
 
 console.log('PASS editor search, replacements, draft state and save guard');
+
+let range, focusCount=0, edits=0, locked=false;
+current='😀 한글 / 한글 end'; doc.saving=false;
+doc.canEdit=()=>!locked;
+doc.editor.set_selected_range=r=>{range={...r};};
+doc.editor.focus=()=>focusCount++;
+doc.editor.replace=text=>{current=current.slice(0,range.start)+text+current.slice(range.end);edits++;};
+search.query={value:()=> '한글'};search.replacement={value:()=> '$&'};search.index=0;
+search.reveal();assert.deepEqual(range,{start:3,end:5});assert.equal(focusCount,1);
+search.move(1,{notify(){}});assert.deepEqual(range,{start:8,end:10});
+locked=true;search.replace(true,{notify(){}});assert.equal(edits,0);
+locked=false;search.replace(true,{notify(){}});
+assert.equal(current,'😀 $& / $& end');assert.equal(edits,1);assert.equal(doc.buffer.text,current);assert.equal(search.undo,null);
+assert.deepEqual(range,{start:3,end:10});
+search.query={value:()=> '$&'};search.replacement={value:()=> ''};search.index=1;
+search.replace(false,{notify(){}});assert.equal(current,'😀 $& /  end');assert.equal(edits,2);
+console.log('PASS native UTF-16 selection, navigation, mutation lock and single-edit Replace all');

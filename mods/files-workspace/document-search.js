@@ -10,7 +10,7 @@ export default class DocumentSearch {
       this.scroll = VirtualListScrollHandle.new();
       this.query = InputState.new({ placeholder: "Find text" });
       this.replacement = InputState.new({ placeholder: "Replace with" });
-      this.query.on("change", (_e, cx) => { this.index = 0; this.cached = null; this.scroll.scroll_to_item(0); cx.notify(); });
+      this.query.on("change", (_e, cx) => { this.index = 0; this.cached = null; this.scroll.scroll_to_item(0); this.reveal(false); cx.notify(); });
       this.query.on("submit", (_e, cx) => this.move(1, cx));
     }
     this.visible = true; this.replacing = replace; this.query.focus(); cx.notify();
@@ -22,16 +22,34 @@ export default class DocumentSearch {
     this.index = Math.min(this.index, Math.max(0, this.cached.found.length - 1));
     return this.cached;
   }
-  move(step, cx) { const n = this.results().found.length; this.index = n ? (this.index + step + n) % n : 0; if (n) this.scroll?.scroll_to_item(this.index, "center"); cx.notify(); }
+  canSelect() { return typeof this.doc.editor?.set_selected_range === "function"; }
+  canReplace() { return this.canSelect() && typeof this.doc.editor?.replace === "function"; }
+  reveal(focus = true) {
+    if (!this.canSelect() || this.doc.loading || this.doc.closed) return;
+    const match = this.results().found[this.index];
+    if (!match) return;
+    this.doc.editor.set_selected_range({ start: match.start, end: match.end });
+    if (focus) this.doc.editor.focus?.();
+  }
+  move(step, cx) { const n = this.results().found.length; this.index = n ? (this.index + step + n) % n : 0; if (n) { this.scroll?.scroll_to_item(this.index, "center"); this.reveal(); } cx.notify(); }
   apply(text, cx) {
     this.doc.applyTextChange(text, cx);
   }
   replace(all, cx) {
-    if (this.doc.saving || this.doc.loading) return;
+    if (this.doc.saving || this.doc.loading || this.doc.closed || this.doc.canEdit?.() === false) return;
     const { text, found } = this.results(); if (!found.length) return;
     const next = replaceMatches(text, all ? found : [found[this.index]], this.replacement.value());
     if (next === text) return;
-    this.undo = { before: text, after: next }; this.apply(next, cx);
+    if (this.canReplace()) {
+      const selected = all ? found : [found[this.index]];
+      const start = selected[0].start, end = selected[selected.length - 1].end;
+      this.doc.editor.set_selected_range({ start, end });
+      // One replacement preserves native undo, including Replace all.
+      this.doc.editor.replace(next.slice(start, next.length - (text.length - end)));
+      this.doc.applyTextChange(this.doc.editor.value(), cx, false);
+      this.undo = null; this.cached = null;
+      this.doc.editor.focus?.();
+    } else { this.undo = { before: text, after: next }; this.apply(next, cx); }
   }
   close() { this.query?.release(); this.replacement?.release(); this.scroll?.release(); }
   render(cx) {
@@ -41,7 +59,7 @@ export default class DocumentSearch {
     return v_flex().w_full().min_w(0).flex_none().p(8).gap(5).text_size(12).border_b(1).border_color(t.border)
       .on_key_down((e, cx) => { if (e.key === "escape") { this.visible = false; cx.stop_propagation(); cx.notify(); } })
       .child(h_flex().w_full().flex_none().gap(5).items_center().child(input(this.query))
-        .child(button("case", this.sensitive ? "Aa: on" : "Aa: off", cx => { this.sensitive = !this.sensitive; cx.notify(); }))
+        .child(button("case", this.sensitive ? "Aa: on" : "Aa: off", cx => { this.sensitive = !this.sensitive; this.reveal(false); cx.notify(); }))
         .child(button("prev", "Previous", cx => this.move(-1, cx))).child(button("next", "Next", cx => this.move(1, cx)))
         .child(div().child(`${found.length ? this.index + 1 : 0}/${found.length}`))
         .child(button("replace-mode", "Replace", cx => { this.replacing = !this.replacing; cx.notify(); }))
@@ -50,8 +68,8 @@ export default class DocumentSearch {
         .child(button("one", "Replace", cx => this.replace(false, cx)))
         .child(button("all", "Replace all", cx => this.replace(true, cx)))
         .when(Boolean(this.undo && text === this.undo.after), el => el.child(button("undo", "Undo replace", cx => { if (!this.doc.saving && !this.doc.loading && this.doc.editor.value() === this.undo.after) { this.apply(this.undo.before, cx); this.undo = null; } })))))
-      .child(div().w_full().flex_none().truncate().text_color(t.muted).child("Search results show line locations without moving the cursor. Save to write changes to disk."))
-      .when(this.replacing, el => el.child(div().w_full().flex_none().text_color(t.muted).child("Replacing resets the editor cursor and native undo history. Undo replace restores the last replacement until you edit again.")))
+      .child(div().w_full().flex_none().truncate().text_color(t.muted).child(this.canSelect() ? "Select a result to go to the matching text. Save to write changes to disk." : "Search results show line locations without moving the cursor. Save to write changes to disk."))
+      .when(this.replacing, el => el.child(div().w_full().flex_none().text_color(t.muted).child(this.canReplace() ? "Use the editor's Undo shortcut to undo a replacement." : "Replacing resets the editor cursor and native undo history. Undo replace restores the last replacement until you edit again.")))
       .when(Boolean(this.query.value()) && !found.length, el => el.child(div().text_color(t.muted).child("No matches")))
       .when(found.length > 0, el => el.child(v_flex().relative().w_full().h(Math.min(5, found.length) * 28).flex_none()
         .child(v_virtual_list("search-results", found.length, 28, i => `${found[i].start}:${found[i].end}`,
@@ -63,7 +81,7 @@ export default class DocumentSearch {
           })).size_full().track_scroll(this.scroll)
           .on_item_click((key, cx) => {
             const index = this.results().found.findIndex(m => `${m.start}:${m.end}` === key);
-            if (index >= 0) { this.index = index; cx.notify(); }
+            if (index >= 0) { this.index = index; this.reveal(); cx.notify(); }
           }))
         .child(Scrollbar.vertical("search-results").absolute().inset_0())));
   }

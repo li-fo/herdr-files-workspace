@@ -89,6 +89,7 @@ export default class Document {
     this.discardArmed = false; this.draftPending = true; this.note = null;
     this.updateTitle(); cx.notify();
   }
+  canEdit() { return !this.closed && !this.loading && !this.saving && !isMoving(this.info); }
   takeHeader(cx) {
     const key = "files-workspace.editor-action:" + this.info.key;
     const request = shared(key);

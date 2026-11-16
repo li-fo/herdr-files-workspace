@@ -31,8 +31,9 @@ files before you use an API. Run `codegraph sync` after code changes.
   Dispose stale results and completed assets when replaced or closed.
 - The transfer queue owns job state. The panel supplies translated messages
   and a refresh callback. Keep new platform commands out of panel rendering.
-- Search results cannot move the native editor cursor with the current public
-  API. Do not emulate private editor controls.
+- On Herdr 0.1.16+, search uses public editor selection and replacement methods.
+  Earlier runtimes keep the result-list and whole-buffer replacement fallback.
+  Do not emulate private editor controls.
 
 ## Installation
 
