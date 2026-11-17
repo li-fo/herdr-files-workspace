@@ -168,7 +168,7 @@ const MAKE_FOLDER = '[ -e "$1" ] || [ -L "$1" ] && exit 17; mkdir -- "$1"';
 const MOVE = '[ -e "$2" ] || [ -L "$2" ] && exit 17; mv -- "$1" "$2"';
 const menuHeight = list => list.reduce((h, it) => h + (it ? MENU_ROW : 9), 10);
 
-// The sidebar follows terminal navigation, not the parent directory of an editor.
+// Keep each Space's first browsing root; terminal navigation must not retarget it.
 const browseLocations = new Map();
 function location() {
   if (props()?.viewer) return { cwd: props().viewer.root, on: props().viewer.on };
@@ -193,9 +193,11 @@ function location() {
   const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
   const cwd = pane?.cwd || f?.cwd || space?.folder;
   const current = { cwd: !on && isWindows() ? cwd?.replaceAll("\\", "/") : cwd, on };
-  // A shell cd into docs/tmp must not shrink an already broader project tree.
   const previous = browseLocations.get(space?.id);
-  const base = previous?.on === on ? previous.cwd : space?.folder?.replaceAll("\\", "/");
+  // New terminals, cd .. and unrelated paths all keep the same Space root.
+  if (previous?.cwd && previous.on === on) return previous;
+  // On first use, preserve a broader Space folder when cwd is inside it.
+  const base = space?.folder?.replaceAll("\\", "/");
   const normalize = path => !on && isWindows() ? path?.toLowerCase() : path;
   if (base && current.cwd && (normalize(current.cwd) === normalize(base)
     || normalize(current.cwd).startsWith(normalize(base).replace(/\/$/, "") + "/"))) current.cwd = base;
