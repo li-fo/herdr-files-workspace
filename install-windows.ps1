@@ -75,6 +75,11 @@ function Find-WorkspaceNode($node, [string]$id) {
     if ($node.id -eq $id) { return $node }
     foreach ($child in $node.children) { $found = Find-WorkspaceNode $child $id; if ($found) { return $found } }
 }
+$sidePanel = Find-WorkspaceNode $layout 'panel'
+# Let the shared Files/Changes panel shrink below the stock layout's minimum.
+if ($sidePanel -and $sidePanel.min -eq 280 -and (Find-WorkspaceNode $sidePanel 'files')) {
+    $sidePanel.min = 160
+}
 $tabsNode = Find-WorkspaceNode $layout 'tabs'
 $mainNode = Find-WorkspaceNode $layout 'main'
 if ($tabsNode.content.mod -in @('tabs', 'files-workspace-agents') -and $mainNode.content.tab -eq 'active') {
