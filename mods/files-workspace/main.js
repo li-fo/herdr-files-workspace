@@ -1048,7 +1048,12 @@ export default class Files extends View {
           this.drag ||= new FileDrag();
           this.drag.start(e.position, this.selection?.items.has(path) ? this.selectedItems() : [{path,dir:entry.dir}], this.root, this.on);
         })
-        .on_mouse_move((e, cx) => { cx.stop_propagation(); this.dragMove(e, entry.dir ? path : prefix, cx); })
+        .on_mouse_move((e, cx) => {
+          // A divider drag can cross the row. Only consume gestures started on a file.
+          if (!this.drag?.state) return;
+          cx.stop_propagation();
+          this.dragMove(e, entry.dir ? path : prefix, cx);
+        })
         .on_mouse_up("left", (_e, cx) => this.dragEnd(entry.dir ? path : prefix, cx))
         .on_click((e, cx) => {
           cx.stop_propagation();
